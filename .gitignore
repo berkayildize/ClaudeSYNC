@@ -1,0 +1,9 @@
+.build/
+.swiftpm/
+dist/
+*.xcuserdata
+*.xcworkspace
+.DS_Store
+DerivedData/
+snapshots/
+launch-kit/
