@@ -188,10 +188,22 @@ struct SessionsWorkspaceView: View {
                     Spacer(minLength: 2)
 
                     if let reset = acc.usage?.lastRateLimitHit?.resetsAt, reset > Date() {
-                        Text(l10n.countdown(until: reset))
+                        Text("↻ \(l10n.compactReset(reset))")
                             .font(.system(size: 9, weight: .semibold))
                             .monospacedDigit()
                             .foregroundStyle(Color(nsColor: .systemOrange))
+                            .lineLimit(1)
+                    } else if let sdReset = acc.usage?.sevenDayResetsAt, (acc.usage?.sevenDayPercent ?? 0) >= 95, sdReset > Date() {
+                        Text("↻ \(l10n.compactReset(sdReset))")
+                            .font(.system(size: 9, weight: .semibold))
+                            .monospacedDigit()
+                            .foregroundStyle(Color(nsColor: .systemOrange))
+                            .lineLimit(1)
+                    } else if let fhReset = acc.usage?.fiveHourResetsAt, fhReset > Date() {
+                        Text("↻ \(l10n.compactReset(fhReset))")
+                            .font(.system(size: 9, weight: .medium))
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
                             .lineLimit(1)
                     } else if let ts = acc.usage?.updatedAt {
                         Text(l10n.relativeDate(ts))

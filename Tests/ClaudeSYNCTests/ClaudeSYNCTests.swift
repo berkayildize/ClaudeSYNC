@@ -710,7 +710,205 @@ final class ClaudeSYNCTests: XCTestCase {
         XCTAssertNotEqual(slotA.profileDataDir.standardizedFileURL, slotB.profileDataDir.standardizedFileURL)
     }
 
+    func testSimpleCacheHashMatchesVerifiedChromiumEntries() {
+        XCTAssertEqual(
+            LiveUsageReader.simpleCacheHashHex(for: "1/0/https://claude.ai/api/organizations/a356a07b-30b6-4c89-92a2-f4d7a5284836/usage?via=plan"),
+            "c6bfb85a318530d2"
+        )
+        XCTAssertEqual(
+            LiveUsageReader.simpleCacheHashHex(for: "1/0/https://claude.ai/api/organizations/a356a07b-30b6-4c89-92a2-f4d7a5284836/usage?cedar_ember=1&skip_spend=1"),
+            "008a1dc856c0928d"
+        )
+        XCTAssertEqual(
+            LiveUsageReader.simpleCacheHashHex(for: "1/0/https://claude.ai/api/organizations/a356a07b-30b6-4c89-92a2-f4d7a5284836/usage"),
+            "ed08589d81888552"
+        )
+        XCTAssertEqual(
+            LiveUsageReader.simpleCacheHashHex(for: "1/0/https://claude.ai/api/organizations/d101ba2f-2d93-4d4a-bd06-31e75d1e045f/usage"),
+            "9475d86b2bcbe547"
+        )
+    }
+
+    func testLiveUsageReaderParsesZstdSimpleCachePayloadAndHeaders() throws {
+        let org = "a356a07b-30b6-4c89-92a2-f4d7a5284836"
+        let key = "1/0/https://claude.ai/api/organizations/\(org)/usage?via=plan"
+        let zstdBody = Data([
+            0x28, 0xb5, 0x2f, 0xfd, 0x20, 0xc9, 0xdd, 0x03, 0x00, 0xf2, 0x47, 0x1a, 0x1b, 0x70, 0x69, 0x75,
+            0x60, 0x44, 0x59, 0xa3, 0x03, 0x7d, 0xa2, 0xc6, 0xf7, 0x43, 0xd2, 0xf5, 0xff, 0x2b, 0xff, 0x0b,
+            0xd8, 0x45, 0x61, 0xe7, 0x01, 0xaa, 0xe2, 0x10, 0x4d, 0xc3, 0x18, 0x6c, 0x87, 0x9b, 0xad, 0xa2,
+            0x4f, 0x98, 0x11, 0xb6, 0xb1, 0xea, 0xf5, 0xa8, 0xe7, 0xc2, 0x36, 0x54, 0xeb, 0xde, 0x81, 0x53,
+            0x8f, 0x44, 0x04, 0x06, 0x42, 0x6c, 0xa2, 0x1a, 0x33, 0xdc, 0x3f, 0xcd, 0x13, 0x90, 0xa9, 0x39,
+            0xd0, 0x03, 0x21, 0x99, 0x0a, 0x84, 0x0a, 0x23, 0x65, 0xba, 0xfe, 0xad, 0xea, 0xc7, 0xcd, 0xee,
+            0x27, 0x03, 0x28, 0xe9, 0xdb, 0xb2, 0xde, 0x26, 0x16, 0x5b, 0x0f, 0x3e, 0xea, 0x1d, 0x5c, 0x0c,
+            0x8a, 0x99, 0xa5, 0x3c, 0x06, 0x05, 0x00, 0x51, 0x19, 0xf9, 0x01, 0xb9, 0xc0, 0x82, 0x31, 0x61,
+            0x7e, 0x08, 0x5b, 0xce
+        ])
+        let entry = buildSimpleCacheEntry(
+            key: key,
+            body: zstdBody,
+            headers: ["HTTP/1.1 200", "date:Fri, 20 Nov 2026 15:06:09 GMT", "content-encoding:zstd"]
+        )
+
+        let reader = LiveUsageReader(claudeCLIStateFile: tempRoot.appendingPathComponent("missing.json"))
+        let reading = try XCTUnwrap(reader.parseSimpleCacheData(entry, fallbackDate: Date(timeIntervalSince1970: 100), expectedOrgUuid: org))
+
+        XCTAssertEqual(reading.fiveHourPercent, 21)
+        XCTAssertEqual(reading.sevenDayPercent, 16)
+        XCTAssertNil(reading.extraUsagePercent)
+        XCTAssertEqual(reading.source, .liveCache)
+        XCTAssertEqual(reading.fiveHourResetsAt, LiveUsageReader.parseISO8601("2026-11-20T18:40:00+00:00"))
+        XCTAssertEqual(reading.sevenDayResetsAt, LiveUsageReader.parseISO8601("2026-11-23T08:00:00+00:00"))
+        XCTAssertEqual(reading.updatedAt, LiveUsageReader.parseISO8601("2026-11-20T15:06:09Z"))
+    }
+
+    func testLiveCacheOverridesFrozenPlanHistoryAndAutoRollsOverExpiredWindows() throws {
+        let fm = FileManager.default
+        let p1 = tempRoot.appendingPathComponent("ClaudeLive", isDirectory: true)
+        let acc = "6f609e5e-8961-4da9-be58-11f98202395b"
+        let org = "a356a07b-30b6-4c89-92a2-f4d7a5284836"
+
+        let sessDir = p1.appendingPathComponent("claude-code-sessions/\(acc)/\(org)", isDirectory: true)
+        let cacheDir = p1.appendingPathComponent("Cache/Cache_Data", isDirectory: true)
+        try fm.createDirectory(at: sessDir, withIntermediateDirectories: true)
+        try fm.createDirectory(at: cacheDir, withIntermediateDirectories: true)
+        try writeSessionJSON(in: sessDir, sessionId: "local_live1", cliSessionId: "cli-1", title: "Active Work", cwd: "/tmp", turns: 12, lastActivityMs: 1_795_180_000_000)
+
+        // Frozen plan-usage-history.json from 13:27 UTC (12% / 9%)
+        let frozenTime = try XCTUnwrap(LiveUsageReader.parseISO8601("2026-11-20T13:27:43Z"))
+        let planHistory = """
+        {"samples":[{"t":\(Int64(frozenTime.timeIntervalSince1970 * 1000)),"org":"\(org)","u":{"fh":12,"sd":9}}]}
+        """
+        try Data(planHistory.utf8).write(to: p1.appendingPathComponent("plan-usage-history.json"))
+
+        // Fresh Cache_Data entry at 15:06:09 UTC (21% / 16%, 5h resets at 18:40 UTC, 7d resets Nov 23 08:00 UTC)
+        let key = "1/0/https://claude.ai/api/organizations/\(org)/usage?via=plan"
+        let hashHex = LiveUsageReader.simpleCacheHashHex(for: key)
+        let liveBody = Data("""
+        {"five_hour":{"utilization":21.0,"resets_at":"2026-11-20T18:40:00Z"},"seven_day":{"utilization":16.0,"resets_at":"2026-11-23T08:00:00Z"}}
+        """.utf8)
+        let cacheEntry = buildSimpleCacheEntry(
+            key: key,
+            body: liveBody,
+            headers: ["HTTP/1.1 200", "date:Fri, 20 Nov 2026 15:06:09 GMT"]
+        )
+        try cacheEntry.write(to: cacheDir.appendingPathComponent("\(hashHex)_0"))
+
+        let reader = LiveUsageReader(claudeCLIStateFile: tempRoot.appendingPathComponent("missing.json"))
+        let discovery = SessionDiscovery(
+            claudeProjectsDir: tempRoot.appendingPathComponent("empty"),
+            liveUsageReader: reader
+        )
+        let profile = ProfileConfig(id: "default", name: "Ana Profil", dataDirPath: p1.path, isDefault: true)
+
+        // 1. At 15:10 UTC (before 18:40 reset): live cache MUST override frozen 12%/9% with 21%/16%!
+        let nowBeforeReset = try XCTUnwrap(LiveUsageReader.parseISO8601("2026-11-20T15:10:00Z"))
+        let slotsBefore = discovery.discoverAccounts(profiles: [profile], nicknames: [:], processSnapshot: .empty, now: nowBeforeReset)
+        let usageBefore = try XCTUnwrap(slotsBefore.first?.usage)
+        XCTAssertEqual(usageBefore.fiveHourPercent, 21)
+        XCTAssertEqual(usageBefore.sevenDayPercent, 16)
+        XCTAssertEqual(usageBefore.source, .liveCache)
+        XCTAssertNotNil(usageBefore.fiveHourResetsAt)
+        XCTAssertEqual(usageBefore.history.count, 2) // 1 from plan-usage-history + 1 from live cache
+
+        // 2. At 18:45 UTC (after 5h reset, before 7d reset): 5h MUST auto-rollover to 0%, 7d stays 16%!
+        let nowAfter5h = try XCTUnwrap(LiveUsageReader.parseISO8601("2026-11-20T18:45:00Z"))
+        let slotsAfter5h = discovery.discoverAccounts(profiles: [profile], nicknames: [:], processSnapshot: .empty, now: nowAfter5h)
+        let usageAfter5h = try XCTUnwrap(slotsAfter5h.first?.usage)
+        XCTAssertEqual(usageAfter5h.fiveHourPercent, 0)
+        XCTAssertEqual(usageAfter5h.sevenDayPercent, 16)
+
+        // 3. At Nov 23 08:05 UTC (after 7d reset): BOTH roll over to 0% and isExhausted is false!
+        let nowAfter7d = try XCTUnwrap(LiveUsageReader.parseISO8601("2026-11-23T08:05:00Z"))
+        let slotsAfter7d = discovery.discoverAccounts(profiles: [profile], nicknames: [:], processSnapshot: .empty, now: nowAfter7d)
+        let usageAfter7d = try XCTUnwrap(slotsAfter7d.first?.usage)
+        XCTAssertEqual(usageAfter7d.fiveHourPercent, 0)
+        XCTAssertEqual(usageAfter7d.sevenDayPercent, 0)
+        XCTAssertFalse(usageAfter7d.isExhausted)
+    }
+
+    func testLiveUsageReaderParsesClaudeCLICachedUsage() throws {
+        let cliFile = tempRoot.appendingPathComponent("claude.json")
+        let acc = "e8d6f666-7e22-4756-b12a-96beee03e0bb"
+        let json = """
+        {
+          "cachedUsageUtilization": {
+            "fetchedAtMs": 1795187000000,
+            "accountUuid": "\(acc)",
+            "utilization": {
+              "five_hour": { "utilization": 34.0, "resets_at": "2026-11-20T20:00:00Z" },
+              "seven_day": { "utilization": 22.0, "resets_at": "2026-11-23T08:00:00Z" }
+            }
+          }
+        }
+        """
+        try Data(json.utf8).write(to: cliFile)
+
+        let reader = LiveUsageReader(claudeCLIStateFile: cliFile)
+        let reading = try XCTUnwrap(reader.readClaudeCLIUsage())
+        XCTAssertEqual(reading.accountUuid, acc)
+        XCTAssertEqual(reading.fiveHourPercent, 34)
+        XCTAssertEqual(reading.sevenDayPercent, 22)
+        XCTAssertEqual(reading.source, .claudeCLI)
+
+        // Regression guard: global ~/.claude.json must NEVER overwrite org-scoped Cache_Data / plan-usage-history!
+        let p = tempRoot.appendingPathComponent("ClaudeGuard", isDirectory: true)
+        let org = "d101ba2f-2d93-4d4a-bd06-31e75d1e045f"
+        let sdir = p.appendingPathComponent("claude-code-sessions/\(acc)/\(org)", isDirectory: true)
+        try FileManager.default.createDirectory(at: sdir, withIntermediateDirectories: true)
+        try writeSessionJSON(in: sdir, sessionId: "local_g1", cliSessionId: "cg1", title: "Guard", cwd: "/tmp", turns: 3, lastActivityMs: 1_795_180_000_000)
+        try Data("{\"samples\":[{\"t\":1795170000000,\"org\":\"\(org)\",\"u\":{\"sd\":100}}]}".utf8)
+            .write(to: p.appendingPathComponent("plan-usage-history.json"))
+
+        let discovery = SessionDiscovery(claudeProjectsDir: tempRoot.appendingPathComponent("empty"), liveUsageReader: reader)
+        let slots = discovery.discoverAccounts(
+            profiles: [ProfileConfig(id: "default", name: "Ana", dataDirPath: p.path, isDefault: true)],
+            nicknames: [:],
+            processSnapshot: .empty
+        )
+        let u = try XCTUnwrap(slots.first?.usage)
+        XCTAssertEqual(u.sevenDayPercent, 100)
+        XCTAssertEqual(u.source, .planHistory)
+    }
+
     // MARK: - Helper
+
+    private func buildSimpleCacheEntry(key: String, body: Data, headers: [String]) -> Data {
+        var out = Data()
+        func appendLE32(_ v: UInt32) {
+            var le = v.littleEndian
+            withUnsafeBytes(of: &le) { out.append(contentsOf: $0) }
+        }
+        func appendLE64(_ v: UInt64) {
+            var le = v.littleEndian
+            withUnsafeBytes(of: &le) { out.append(contentsOf: $0) }
+        }
+        let keyData = Data(key.utf8)
+        appendLE64(0xfcfb6d1ba7725c30) // SimpleFileHeader magic
+        appendLE32(5)                  // version
+        appendLE32(UInt32(keyData.count))
+        appendLE32(0)                  // key_hash
+        appendLE32(0)                  // pad
+        out.append(keyData)
+        out.append(body)
+        // EOF 1
+        appendLE64(0xf4fa6f45970d41d8)
+        appendLE32(1)
+        appendLE32(0)
+        appendLE32(UInt32(body.count))
+        appendLE32(0)
+        // Stream 0 headers
+        for h in headers {
+            out.append(Data(h.utf8))
+            out.append(0x00)
+        }
+        // EOF 0
+        appendLE64(0xf4fa6f45970d41d8)
+        appendLE32(1)
+        appendLE32(0)
+        appendLE32(0)
+        appendLE32(0)
+        return out
+    }
 
     private func writeSessionJSON(
         in dir: URL,

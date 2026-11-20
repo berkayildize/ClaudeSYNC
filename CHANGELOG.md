@@ -5,6 +5,24 @@ Each release is packaged as a standalone macOS `.dmg` under [GitHub Releases](ht
 
 ---
 
+## [v0.0.7] — 2026-11-20
+
+### Real-Time Live Usage Telemetry Engine (`Cache_Data` + ZSTD + `kqueue` Watchers)
+
+#### Fixed
+- **Fixed frozen/stale usage percentages:** Claude Desktop pauses updating `plan-usage-history.json` 15 minutes after startup unless its own menu-bar tray popup is clicked (`[plan-usage] background poll paused`). Previously, ClaudeSYNC only read `plan-usage-history.json`, leaving Menu Bar and Dashboard percentages stuck at outdated startup values instead of matching Claude Desktop's live Usage page.
+- **O(1) Live HTTP Cache Telemetry (`LiveUsageReader` + vendored BSD-3-Clause `CZstd`):** ClaudeSYNC now performs deterministic 64-bit SHA-1 direct lookups (`< 0.1 ms`, zero directory scanning, zero network calls, zero Cookies/Keychain access) against Claude Desktop's live `Cache/Cache_Data` `/usage` responses (`?via=plan`, `?cedar_ember=1&skip_spend=1`, `/usage`), natively decompressing ZSTD, Brotli, Gzip, and Deflate payloads with zero external dependencies, plus reading Claude Code CLI's `~/.claude.json` `cachedUsageUtilization` fallback.
+- **Automatic Reset-Window Rollover:** Parses exact server `resets_at` timestamps for both 5-hour and 7-day windows and automatically rolls expired windows over to `0%` (clearing stale `100%` exhausted badges the moment a reset clock passes).
+
+#### Added
+- **Instant Kernel `kqueue` File Watchers & 5-Second Background Loop:** Watches each profile's exact `/usage` cache entries and `plan-usage-history.json` via `DispatchSourceFileSystemObject` (300ms debounce, 0.0% idle CPU) plus an App-Nap-resilient 5s `DispatchSourceTimer` so Menu Bar bars and cards update immediately when usage ticks.
+- **Exact Reset Clocks & Live Source Attribution in UI:** Account cards, Limits Dashboard (`5 Saatlik` / `7 Günlük` bars), and the Menu Bar hover tooltip now display exact reset times (`↻ 21:40`, `↻ Pzt 11:00`) and live data source freshness (`Canlı önbellek` / `Live cache`).
+
+#### Testing
+- Expanded unit test suite to `18/18` passing, verifying exact Chromium Simple Cache SHA-1 entry hashes, real ZSTD decompression, live cache freshness precedence over frozen `plan-usage-history.json`, automatic 5h/7d reset-window rollover, and `~/.claude.json` CLI cache parsing.
+
+---
+
 ## [v0.0.6] — 2026-11-20
 
 ### Creator Attribution & Direct Social Links

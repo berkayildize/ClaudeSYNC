@@ -149,7 +149,10 @@ final class AppViewModel: ObservableObject {
     private let syncEngine: SessionSyncEngine
     private let rateLimitWatcher: RateLimitWatcher
     private let launchAgent: LaunchAgentManager
-    private var timer: Timer?
+    private var refreshTimer: DispatchSourceTimer?
+    private let watcherQueue = DispatchQueue(label: "com.berkay.ClaudeSYNC.usage-watchers", qos: .utility)
+    private var fileWatchers: [String: DispatchSourceFileSystemObject] = [:]
+    private var watcherDebounceWork: DispatchWorkItem?
     private var themeObserver: NSObjectProtocol?
     private var refreshInFlight: Bool = false
     private var isDemoMode: Bool = false
@@ -200,7 +203,11 @@ final class AppViewModel: ObservableObject {
     }
 
     deinit {
-        timer?.invalidate()
+        refreshTimer?.cancel()
+        watcherDebounceWork?.cancel()
+        for src in fileWatchers.values {
+            src.cancel()
+        }
         if let obs = themeObserver {
             DistributedNotificationCenter.default().removeObserver(obs)
         }
@@ -389,15 +396,94 @@ final class AppViewModel: ObservableObject {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    // MARK: - Refresh & Background Auto-Sync Loop
+    // MARK: - Refresh, Live File Watchers & Background Auto-Sync Loop
 
     func startAutoRefresh() {
-        timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 12.0, repeats: true) { [weak self] _ in
+        refreshTimer?.cancel()
+        let src = DispatchSource.makeTimerSource(queue: watcherQueue)
+        src.schedule(deadline: .now() + .seconds(5), repeating: .seconds(5), leeway: .milliseconds(500))
+        src.setEventHandler { [weak self] in
             Task { @MainActor in
                 self?.refresh(userInitiated: false)
             }
         }
+        src.resume()
+        refreshTimer = src
+        syncUsageFileWatchers()
+    }
+
+    /// Watches exact `/usage` HTTP cache files and `plan-usage-history.json` via kernel kqueue
+    /// so the Menu Bar and Dashboard react within ~300ms whenever Claude Desktop refreshes usage.
+    private func syncUsageFileWatchers() {
+        guard !isDemoMode else { return }
+        let fm = FileManager.default
+        var desiredPaths: Set<String> = []
+        let orgUuids = Set(accounts.map(\.orgUuid))
+
+        for profile in settings.allProfiles {
+            let dir = profile.expandedURL.standardizedFileURL
+            let histFile = dir.appendingPathComponent("plan-usage-history.json", isDirectory: false)
+            if fm.fileExists(atPath: histFile.path) {
+                desiredPaths.insert(histFile.path)
+            }
+            for org in orgUuids {
+                for url in LiveUsageReader.candidateCacheFileURLs(in: dir, orgUuid: org) {
+                    if fm.fileExists(atPath: url.path) {
+                        desiredPaths.insert(url.path)
+                    }
+                }
+            }
+        }
+
+        let cliState = URL(fileURLWithPath: ("~/.claude.json" as NSString).expandingTildeInPath)
+        if fm.fileExists(atPath: cliState.path) {
+            desiredPaths.insert(cliState.path)
+        }
+
+        // Remove stale watchers
+        for (path, src) in fileWatchers where !desiredPaths.contains(path) {
+            src.cancel()
+            fileWatchers.removeValue(forKey: path)
+        }
+
+        // Install missing watchers
+        for path in desiredPaths where fileWatchers[path] == nil {
+            let fd = open(path, O_EVTONLY)
+            guard fd >= 0 else { continue }
+            let source = DispatchSource.makeFileSystemObjectSource(
+                fileDescriptor: fd,
+                eventMask: [.write, .extend, .attrib, .rename, .delete],
+                queue: watcherQueue
+            )
+            source.setEventHandler { [weak self] in
+                guard let self else { return }
+                let flags = source.data
+                let needsRearm = flags.contains(.delete) || flags.contains(.rename)
+                Task { @MainActor in
+                    if needsRearm {
+                        self.fileWatchers[path]?.cancel()
+                        self.fileWatchers.removeValue(forKey: path)
+                    }
+                    self.scheduleDebouncedWatcherRefresh()
+                }
+            }
+            source.setCancelHandler {
+                close(fd)
+            }
+            source.resume()
+            fileWatchers[path] = source
+        }
+    }
+
+    private func scheduleDebouncedWatcherRefresh() {
+        watcherDebounceWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            Task { @MainActor in
+                self?.refresh(userInitiated: false)
+            }
+        }
+        watcherDebounceWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(300), execute: work)
     }
 
     func refresh(userInitiated: Bool = true) {
@@ -468,6 +554,7 @@ final class AppViewModel: ObservableObject {
                 self.refreshInFlight = false
                 if self.isRefreshing { self.isRefreshing = false }
                 if !isSnapshot {
+                    self.syncUsageFileWatchers()
                     self.checkAutoSwitchIfNeeded()
                 }
             }

@@ -3,6 +3,7 @@ import Foundation
 public final class SessionDiscovery: @unchecked Sendable {
     public let claudeProjectsDir: URL
     public let rateLimitWatcher: RateLimitWatcher
+    public let liveUsageReader: LiveUsageReader
 
     private struct CachedCard {
         let modDate: Date
@@ -19,13 +20,16 @@ public final class SessionDiscovery: @unchecked Sendable {
     private let cacheLock = NSLock()
     private var cardCache: [String: CachedCard] = [:]
     private var rateLimitCache: [String: CachedRateLimit] = [:]
+    private var liveHistoryByOrg: [String: [UsageSamplePoint]] = [:]
 
     public init(
         claudeProjectsDir: URL = SessionDiscovery.defaultClaudeProjectsDir,
-        rateLimitWatcher: RateLimitWatcher = RateLimitWatcher()
+        rateLimitWatcher: RateLimitWatcher = RateLimitWatcher(),
+        liveUsageReader: LiveUsageReader = LiveUsageReader()
     ) {
         self.claudeProjectsDir = claudeProjectsDir
         self.rateLimitWatcher = rateLimitWatcher
+        self.liveUsageReader = liveUsageReader
     }
 
     public static var defaultClaudeProjectsDir: URL {
@@ -35,36 +39,99 @@ public final class SessionDiscovery: @unchecked Sendable {
     public func discoverAccounts(
         profiles: [ProfileConfig],
         nicknames: [String: String],
-        processSnapshot: ProcessSnapshot
+        processSnapshot: ProcessSnapshot,
+        now: Date = Date()
     ) -> [AccountSlot] {
         let fm = FileManager.default
         let transcriptIndex = buildTranscriptIndex(fm: fm)
 
-        // Read per-profile plan-usage-history.json AND merge across all profiles so every org gets its freshest reading + full timeline
+        // 1. Collect all known org UUIDs from both plan-usage-history.json AND claude-code-sessions dirs
         var perProfileUsageByPath: [String: [String: OrgUsage]] = [:]
         var mergedUsageByOrg: [String: OrgUsage] = [:]
+        var allOrgUuids: Set<String> = []
+
         for profile in profiles {
-            let stdPath = profile.expandedURL.standardizedFileURL.path
-            let perProfile = readUsageHistory(in: profile.expandedURL.standardizedFileURL)
+            let profileDir = profile.expandedURL.standardizedFileURL
+            let stdPath = profileDir.path
+            let perProfile = readUsageHistory(in: profileDir)
             perProfileUsageByPath[stdPath] = perProfile
+            allOrgUuids.formUnion(perProfile.keys)
+
+            let sessionsRoot = profileDir.appendingPathComponent("claude-code-sessions", isDirectory: true)
+            for accDir in subdirectories(at: sessionsRoot, fm: fm) where isLikelyUUID(accDir.lastPathComponent) {
+                for orgDir in subdirectories(at: accDir, fm: fm) where isLikelyUUID(orgDir.lastPathComponent) {
+                    allOrgUuids.insert(orgDir.lastPathComponent)
+                }
+            }
+        }
+
+        // 2. Enrich per-profile usage with O(1) live Chromium Simple Cache `/usage` responses
+        //    (Claude Desktop pauses plan-usage-history.json after 15m, while Cache_Data stays live!)
+        for profile in profiles {
+            let profileDir = profile.expandedURL.standardizedFileURL
+            let stdPath = profileDir.path
+            var perProfile = perProfileUsageByPath[stdPath] ?? [:]
+
+            for orgUuid in allOrgUuids {
+                if let live = liveUsageReader.readFreshestCacheUsage(in: profileDir, orgUuid: orgUuid) {
+                    recordLiveObservation(orgUuid: orgUuid, reading: live)
+                    let livePoint = UsageSamplePoint(
+                        timestamp: live.updatedAt,
+                        fiveHour: live.fiveHourPercent,
+                        sevenDay: live.sevenDayPercent,
+                        extraUsage: live.extraUsagePercent
+                    )
+                    if let existing = perProfile[orgUuid] {
+                        perProfile[orgUuid] = mergeOrgUsage(existing, withLive: live, point: livePoint)
+                    } else {
+                        perProfile[orgUuid] = OrgUsage(
+                            orgUuid: orgUuid,
+                            fiveHourPercent: live.fiveHourPercent,
+                            sevenDayPercent: live.sevenDayPercent,
+                            extraUsagePercent: live.extraUsagePercent,
+                            fiveHourResetsAt: live.fiveHourResetsAt,
+                            sevenDayResetsAt: live.sevenDayResetsAt,
+                            updatedAt: live.updatedAt,
+                            history: [livePoint],
+                            lastRateLimitHit: nil,
+                            source: .liveCache
+                        )
+                    }
+                }
+            }
+            perProfileUsageByPath[stdPath] = perProfile
+
             for (org, usage) in perProfile {
                 if let existing = mergedUsageByOrg[org] {
-                    let combinedHistory = mergeHistory(existing.history, usage.history)
-                    let newer = usage.updatedAt >= existing.updatedAt ? usage : existing
-                    mergedUsageByOrg[org] = OrgUsage(
-                        orgUuid: org,
-                        fiveHourPercent: newer.fiveHourPercent,
-                        sevenDayPercent: newer.sevenDayPercent,
-                        extraUsagePercent: newer.extraUsagePercent ?? existing.extraUsagePercent,
-                        updatedAt: newer.updatedAt,
-                        history: combinedHistory,
-                        lastRateLimitHit: newer.lastRateLimitHit ?? existing.lastRateLimitHit
-                    )
+                    mergedUsageByOrg[org] = mergeOrgUsages(existing, usage)
                 } else {
                     mergedUsageByOrg[org] = usage
                 }
             }
         }
+
+        // Merge any recorded live session observations into sparkline timelines
+        cacheLock.lock()
+        let liveHistSnapshot = liveHistoryByOrg
+        cacheLock.unlock()
+        for (org, points) in liveHistSnapshot {
+            if let existing = mergedUsageByOrg[org] {
+                mergedUsageByOrg[org] = OrgUsage(
+                    orgUuid: existing.orgUuid,
+                    fiveHourPercent: existing.fiveHourPercent,
+                    sevenDayPercent: existing.sevenDayPercent,
+                    extraUsagePercent: existing.extraUsagePercent,
+                    fiveHourResetsAt: existing.fiveHourResetsAt,
+                    sevenDayResetsAt: existing.sevenDayResetsAt,
+                    updatedAt: existing.updatedAt,
+                    history: mergeHistory(existing.history, points),
+                    lastRateLimitHit: existing.lastRateLimitHit,
+                    source: existing.source
+                )
+            }
+        }
+
+        let cliUsage = liveUsageReader.readClaudeCLIUsage()
 
         var result: [AccountSlot] = []
         var defaultCounter = 0
@@ -158,24 +225,72 @@ public final class SessionDiscovery: @unchecked Sendable {
                     let pairLower = key.lowercased()
                     let activeFromAgent = processSnapshot.activeAccountOrgPairs.contains(pairLower)
 
-                    // Cached tail scan for rate-limit events
+                    // Cached tail scan for rate-limit events + safe last-resort CLI fallback
                     let rateLimitHit = scanLatestRateLimitCached(for: cards, fm: fm)
                     var usage = mergedUsageByOrg[orgUuid]
+
+                    // ~/.claude.json is a single global file shared across accounts (Claude Desktop spawns embedded
+                    // `claude` under the active Desktop account, which can write Account A's numbers under Account B's
+                    // stale `oauthAccount.accountUuid`). Therefore NEVER overwrite org-scoped Cache_Data / plan-usage-history
+                    // with ~/.claude.json — only use it as a fallback when no org-scoped usage exists at all.
+                    if usage == nil, let cli = cliUsage, cli.accountUuid == accUuid.lowercased() {
+                        let cliPoint = UsageSamplePoint(
+                            timestamp: cli.updatedAt,
+                            fiveHour: cli.fiveHourPercent,
+                            sevenDay: cli.sevenDayPercent,
+                            extraUsage: cli.extraUsagePercent
+                        )
+                        usage = OrgUsage(
+                            orgUuid: orgUuid,
+                            fiveHourPercent: cli.fiveHourPercent,
+                            sevenDayPercent: cli.sevenDayPercent,
+                            extraUsagePercent: cli.extraUsagePercent,
+                            fiveHourResetsAt: cli.fiveHourResetsAt,
+                            sevenDayResetsAt: cli.sevenDayResetsAt,
+                            updatedAt: cli.updatedAt,
+                            history: [cliPoint],
+                            lastRateLimitHit: nil,
+                            source: .claudeCLI
+                        )
+                    }
+
                     if let hit = rateLimitHit {
-                        if var existingUsage = usage {
-                            existingUsage.lastRateLimitHit = hit
-                            usage = existingUsage
+                        if let existingUsage = usage {
+                            let hitIsNewerAndActive = hit.isCurrentlyRejected && hit.timestamp >= existingUsage.updatedAt
+                            let isFiveHourHit = hit.rateLimitType.lowercased() == "five_hour"
+                            let isSevenDayHit = hit.rateLimitType.lowercased() == "seven_day"
+                            usage = OrgUsage(
+                                orgUuid: existingUsage.orgUuid,
+                                fiveHourPercent: (hitIsNewerAndActive && isFiveHourHit) ? 100 : existingUsage.fiveHourPercent,
+                                sevenDayPercent: (hitIsNewerAndActive && isSevenDayHit) ? 100 : existingUsage.sevenDayPercent,
+                                extraUsagePercent: existingUsage.extraUsagePercent,
+                                fiveHourResetsAt: (hitIsNewerAndActive && isFiveHourHit) ? (hit.resetsAt ?? existingUsage.fiveHourResetsAt) : existingUsage.fiveHourResetsAt,
+                                sevenDayResetsAt: (hitIsNewerAndActive && isSevenDayHit) ? (hit.resetsAt ?? existingUsage.sevenDayResetsAt) : existingUsage.sevenDayResetsAt,
+                                updatedAt: hitIsNewerAndActive ? hit.timestamp : existingUsage.updatedAt,
+                                history: existingUsage.history,
+                                lastRateLimitHit: hit,
+                                source: hitIsNewerAndActive ? .rateLimitLog : existingUsage.source
+                            )
                         } else {
+                            let isFiveHourHit = hit.rateLimitType.lowercased() == "five_hour"
+                            let isSevenDayHit = hit.rateLimitType.lowercased() == "seven_day"
                             usage = OrgUsage(
                                 orgUuid: orgUuid,
-                                fiveHourPercent: hit.rateLimitType == "five_hour" ? 100 : nil,
-                                sevenDayPercent: hit.rateLimitType == "seven_day" ? 100 : nil,
+                                fiveHourPercent: isFiveHourHit ? 100 : nil,
+                                sevenDayPercent: isSevenDayHit ? 100 : nil,
                                 extraUsagePercent: nil,
+                                fiveHourResetsAt: isFiveHourHit ? hit.resetsAt : nil,
+                                sevenDayResetsAt: isSevenDayHit ? hit.resetsAt : nil,
                                 updatedAt: hit.timestamp,
                                 history: [],
-                                lastRateLimitHit: hit
+                                lastRateLimitHit: hit,
+                                source: .rateLimitLog
                             )
                         }
+                    }
+
+                    if let currentUsage = usage {
+                        usage = applyWindowRollover(currentUsage, now: now)
                     }
 
                     let slot = AccountSlot(
@@ -337,6 +452,122 @@ public final class SessionDiscovery: @unchecked Sendable {
             bySec[Int(p.timestamp.timeIntervalSince1970)] = p
         }
         return bySec.values.sorted { $0.timestamp < $1.timestamp }.suffix(60)
+    }
+
+    private func recordLiveObservation(orgUuid: String, reading: LiveUsageReading) {
+        let point = UsageSamplePoint(
+            timestamp: reading.updatedAt,
+            fiveHour: reading.fiveHourPercent,
+            sevenDay: reading.sevenDayPercent,
+            extraUsage: reading.extraUsagePercent
+        )
+        cacheLock.lock()
+        var arr = liveHistoryByOrg[orgUuid] ?? []
+        let sec = Int(point.timestamp.timeIntervalSince1970)
+        if !arr.contains(where: { Int($0.timestamp.timeIntervalSince1970) == sec }) {
+            arr.append(point)
+            arr.sort { $0.timestamp < $1.timestamp }
+            if arr.count > 60 { arr.removeFirst(arr.count - 60) }
+            liveHistoryByOrg[orgUuid] = arr
+        }
+        cacheLock.unlock()
+    }
+
+    private func mergeOrgUsage(
+        _ existing: OrgUsage,
+        withLive live: LiveUsageReading,
+        point: UsageSamplePoint
+    ) -> OrgUsage {
+        let combinedHistory = mergeHistory(existing.history, [point])
+        // Prefer live reading when strictly newer, OR within 2s of plan-usage-history (since live carries resets_at)
+        let liveWins = live.updatedAt.timeIntervalSince(existing.updatedAt) >= -2.0
+        if liveWins {
+            return OrgUsage(
+                orgUuid: existing.orgUuid,
+                fiveHourPercent: live.fiveHourPercent,
+                sevenDayPercent: live.sevenDayPercent ?? existing.sevenDayPercent,
+                extraUsagePercent: live.extraUsagePercent ?? existing.extraUsagePercent,
+                fiveHourResetsAt: live.fiveHourResetsAt ?? existing.fiveHourResetsAt,
+                sevenDayResetsAt: live.sevenDayResetsAt ?? existing.sevenDayResetsAt,
+                updatedAt: max(live.updatedAt, existing.updatedAt),
+                history: combinedHistory,
+                lastRateLimitHit: existing.lastRateLimitHit,
+                source: live.source
+            )
+        } else {
+            return OrgUsage(
+                orgUuid: existing.orgUuid,
+                fiveHourPercent: existing.fiveHourPercent,
+                sevenDayPercent: existing.sevenDayPercent,
+                extraUsagePercent: existing.extraUsagePercent ?? live.extraUsagePercent,
+                fiveHourResetsAt: existing.fiveHourResetsAt ?? live.fiveHourResetsAt,
+                sevenDayResetsAt: existing.sevenDayResetsAt ?? live.sevenDayResetsAt,
+                updatedAt: existing.updatedAt,
+                history: combinedHistory,
+                lastRateLimitHit: existing.lastRateLimitHit,
+                source: existing.source
+            )
+        }
+    }
+
+    private func mergeOrgUsages(_ a: OrgUsage, _ b: OrgUsage) -> OrgUsage {
+        let combinedHistory = mergeHistory(a.history, b.history)
+        let bWins: Bool
+        if abs(b.updatedAt.timeIntervalSince(a.updatedAt)) <= 2.0 {
+            bWins = (b.source == .liveCache && a.source != .liveCache)
+                || (b.fiveHourResetsAt != nil && a.fiveHourResetsAt == nil)
+        } else {
+            bWins = b.updatedAt > a.updatedAt
+        }
+        let newer = bWins ? b : a
+        let older = bWins ? a : b
+        return OrgUsage(
+            orgUuid: newer.orgUuid,
+            fiveHourPercent: newer.fiveHourPercent,
+            sevenDayPercent: newer.sevenDayPercent ?? older.sevenDayPercent,
+            extraUsagePercent: newer.extraUsagePercent ?? older.extraUsagePercent,
+            fiveHourResetsAt: newer.fiveHourResetsAt ?? older.fiveHourResetsAt,
+            sevenDayResetsAt: newer.sevenDayResetsAt ?? older.sevenDayResetsAt,
+            updatedAt: newer.updatedAt,
+            history: combinedHistory,
+            lastRateLimitHit: newer.lastRateLimitHit ?? older.lastRateLimitHit,
+            source: newer.source
+        )
+    }
+
+    /// Automatically resets expired 5-hour or 7-day windows once their exact server `resets_at` boundary passes.
+    private func applyWindowRollover(_ usage: OrgUsage, now: Date) -> OrgUsage {
+        var fh = usage.fiveHourPercent
+        var fhReset = usage.fiveHourResetsAt
+        if let reset = fhReset, usage.updatedAt < reset, now >= reset {
+            fh = 0
+            fhReset = nil
+        }
+
+        var sd = usage.sevenDayPercent
+        var sdReset = usage.sevenDayResetsAt
+        if let reset = sdReset, usage.updatedAt < reset, now >= reset {
+            sd = 0
+            sdReset = nil
+        }
+
+        if fh == usage.fiveHourPercent && sd == usage.sevenDayPercent
+            && fhReset == usage.fiveHourResetsAt && sdReset == usage.sevenDayResetsAt {
+            return usage
+        }
+
+        return OrgUsage(
+            orgUuid: usage.orgUuid,
+            fiveHourPercent: fh,
+            sevenDayPercent: sd,
+            extraUsagePercent: usage.extraUsagePercent,
+            fiveHourResetsAt: fhReset,
+            sevenDayResetsAt: sdReset,
+            updatedAt: usage.updatedAt,
+            history: usage.history,
+            lastRateLimitHit: usage.lastRateLimitHit,
+            source: usage.source
+        )
     }
 
     private struct TranscriptEntry {

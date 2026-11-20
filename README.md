@@ -36,7 +36,7 @@ A native, 100% local, open-source macOS desktop app (with a toggleable Retina Me
 - **Single-Window Autonomous Switching (`--user-data-dir`)**
   - Keeps **only 1 Claude Desktop window running** by default: when switching accounts, ClaudeSYNC syncs your active session cards, closes the current Claude window cleanly, and reopens directly in the other account — no duplicate Dock icons, zero logout loops, and **native Google/Gmail OAuth support** on setup. (Optional Parallel Dual-Window Mode is also available in Settings/Profiles.)
 - **Real-Time Limits & Automatic Failover**
-  - Monitors local `plan-usage-history.json` and active `.jsonl` tails for `429 usage_limit_reached` events and exact `resetsAt` countdowns. Automatically transfers active sessions to your healthy account and brings its profile forward when a limit hits.
+  - Reads live local Anthropic `/usage` telemetry directly from Claude Desktop's `Cache/Cache_Data` (O(1) deterministic SHA-1 lookup with built-in native ZSTD/Brotli/Gzip decoding), `plan-usage-history.json`, `~/.claude.json`, and active `.jsonl` tails via kernel `kqueue` file watchers — with exact `resets_at` countdowns and automatic window rollover. Automatically transfers active sessions to your healthy account and switches directly when a limit hits.
 - **Background Auto Shared-Card Sync**
   - Once you share a session across accounts and continue working in Account B, ClaudeSYNC silently mirrors updated card metadata (`completedTurns`, `title`, `lastActivityAt`) back to Account A — never touching unshared sessions and never overwriting newer state with older state.
 - **100% Local & Safe by Design**

@@ -12,7 +12,16 @@ let package = Package(
     ],
     targets: [
         .target(
+            name: "CZstd",
+            path: "Sources/CZstd",
+            publicHeadersPath: "include",
+            cSettings: [
+                .define("ZSTD_DISABLE_ASM", to: "1")
+            ]
+        ),
+        .target(
             name: "ClaudeSYNCCore",
+            dependencies: ["CZstd"],
             path: "Sources/ClaudeSYNCCore"
         ),
         .executableTarget(

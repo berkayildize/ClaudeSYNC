@@ -239,14 +239,13 @@ struct LimitsDashboardView: View {
                     LinearUsageBar(
                         label: l10n.t("5 Saatlik", "5-Hour Window"),
                         percent: usage?.fiveHourPercent,
-                        subtitle: usage?.fiveHourPercent == nil && (usage?.sevenDayPercent ?? 0) >= 100
-                            ? l10n.t("(7g dolu)", "(7d full)")
-                            : nil,
+                        subtitle: fiveHourSubtitle(for: usage),
                         isTurkish: l10n.isTurkish
                     )
                     LinearUsageBar(
                         label: l10n.t("7 Günlük", "7-Day Window"),
                         percent: usage?.sevenDayPercent,
+                        subtitle: sevenDaySubtitle(for: usage),
                         isTurkish: l10n.isTurkish
                     )
                     if let xu = usage?.extraUsagePercent {
@@ -311,15 +310,10 @@ struct LimitsDashboardView: View {
                             .foregroundStyle(.tertiary)
                             .tracking(0.6)
                         Spacer()
-                        if let ts = usage?.updatedAt {
-                            Text(
-                                l10n.t(
-                                    "Son güncelleme: \(l10n.relativeDate(ts))",
-                                    "Updated \(l10n.relativeDate(ts))"
-                                )
-                            )
-                            .font(.system(size: 9.5))
-                            .foregroundStyle(.tertiary)
+                        if let u = usage {
+                            Text("\(u.source.label(isTurkish: l10n.isTurkish)) · \(l10n.relativeDate(u.updatedAt))")
+                                .font(.system(size: 9.5))
+                                .foregroundStyle(.tertiary)
                         }
                     }
 
@@ -336,6 +330,13 @@ struct LimitsDashboardView: View {
                             .fill(Color.primary.opacity(0.04))
                     )
                 }
+            } else if let u = usage {
+                HStack {
+                    Spacer()
+                    Text("\(u.source.label(isTurkish: l10n.isTurkish)) · \(l10n.relativeDate(u.updatedAt))")
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(.tertiary)
+                }
             }
         }
         .padding(13)
@@ -346,6 +347,22 @@ struct LimitsDashboardView: View {
                 ? Color(nsColor: .systemRed).opacity(0.32)
                 : (account.isActiveAccount ? Color(nsColor: .systemGreen).opacity(0.28) : nil)
         )
+    }
+
+    private func fiveHourSubtitle(for usage: OrgUsage?) -> String? {
+        guard let usage else { return nil }
+        if usage.fiveHourPercent == nil && (usage.sevenDayPercent ?? 0) >= 100 {
+            return l10n.t("(7g dolu)", "(7d full)")
+        }
+        if let reset = usage.fiveHourResetsAt, reset > Date() {
+            return "↻ \(l10n.compactReset(reset))"
+        }
+        return nil
+    }
+
+    private func sevenDaySubtitle(for usage: OrgUsage?) -> String? {
+        guard let usage, let reset = usage.sevenDayResetsAt, reset > Date() else { return nil }
+        return "↻ \(l10n.compactReset(reset))"
     }
 
     private func statusBadge(isExhausted: Bool, isActive: Bool) -> some View {
@@ -408,8 +425,8 @@ struct LimitsDashboardView: View {
                 .font(.system(size: 12, weight: .semibold))
             Text(
                 l10n.t(
-                    "Claude Desktop açık olduğunda plan-usage-history.json ve oturum kayıtları otomatik izlenir.",
-                    "When Claude Desktop runs, plan-usage-history.json and session logs are monitored automatically."
+                    "Claude Desktop açık olduğunda canlı kullanım önbelleği, plan-usage-history.json ve oturum kayıtları otomatik izlenir.",
+                    "When Claude Desktop runs, live usage cache, plan-usage-history.json, and session logs are monitored automatically."
                 )
             )
             .font(.system(size: 10.5))

@@ -127,35 +127,64 @@ public struct RateLimitEvent: Equatable, Hashable, Identifiable, Sendable {
     }
 }
 
+public enum UsageDataSource: String, Equatable, Hashable, Sendable {
+    case liveCache = "liveCache"
+    case planHistory = "planHistory"
+    case claudeCLI = "claudeCLI"
+    case rateLimitLog = "rateLimitLog"
+
+    public func label(isTurkish: Bool) -> String {
+        switch self {
+        case .liveCache: return isTurkish ? "Canlı önbellek" : "Live cache"
+        case .planHistory: return isTurkish ? "Plan geçmişi" : "Plan history"
+        case .claudeCLI: return isTurkish ? "Claude CLI" : "Claude CLI"
+        case .rateLimitLog: return isTurkish ? "429 oturum kaydı" : "429 session log"
+        }
+    }
+}
+
 public struct OrgUsage: Equatable, Hashable, Sendable {
     public let orgUuid: String
     public let fiveHourPercent: Int?
     public let sevenDayPercent: Int?
     public let extraUsagePercent: Int?
+    public let fiveHourResetsAt: Date?
+    public let sevenDayResetsAt: Date?
     public let updatedAt: Date
     public let history: [UsageSamplePoint]
     public var lastRateLimitHit: RateLimitEvent?
+    public let source: UsageDataSource
 
     public init(
         orgUuid: String,
         fiveHourPercent: Int?,
         sevenDayPercent: Int?,
         extraUsagePercent: Int? = nil,
+        fiveHourResetsAt: Date? = nil,
+        sevenDayResetsAt: Date? = nil,
         updatedAt: Date,
         history: [UsageSamplePoint] = [],
-        lastRateLimitHit: RateLimitEvent? = nil
+        lastRateLimitHit: RateLimitEvent? = nil,
+        source: UsageDataSource = .planHistory
     ) {
         self.orgUuid = orgUuid
         self.fiveHourPercent = fiveHourPercent
         self.sevenDayPercent = sevenDayPercent
         self.extraUsagePercent = extraUsagePercent
+        self.fiveHourResetsAt = fiveHourResetsAt
+        self.sevenDayResetsAt = sevenDayResetsAt
         self.updatedAt = updatedAt
         self.history = history
         self.lastRateLimitHit = lastRateLimitHit
+        self.source = source
     }
 
     public var isFresh: Bool {
         Date().timeIntervalSince(updatedAt) < 60 * 60 * 6
+    }
+
+    public var isStale: Bool {
+        Date().timeIntervalSince(updatedAt) > 20 * 60
     }
 
     public var peakPercent: Int {
@@ -601,6 +630,19 @@ public enum LocalizedDateFormatter {
         let fmt = DateFormatter()
         fmt.locale = Locale(identifier: isTurkish ? "tr_TR" : "en_US")
         fmt.dateFormat = isTurkish ? "d MMM HH:mm" : "MMM d, HH:mm"
+        return fmt.string(from: date)
+    }
+
+    public static func compactResetTime(_ date: Date, now: Date = Date(), isTurkish: Bool) -> String {
+        let fmt = DateFormatter()
+        fmt.locale = Locale(identifier: isTurkish ? "tr_TR" : "en_US")
+        if Calendar.current.isDate(date, inSameDayAs: now) {
+            fmt.dateFormat = "HH:mm"
+        } else if abs(date.timeIntervalSince(now)) < 7 * 86400 {
+            fmt.dateFormat = "EEE HH:mm"
+        } else {
+            fmt.dateFormat = isTurkish ? "d MMM HH:mm" : "MMM d, HH:mm"
+        }
         return fmt.string(from: date)
     }
 }

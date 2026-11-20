@@ -53,7 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
             .store(in: &cancellables)
 
-        // Re-render status bar image only when accounts, settings, or theme actually change
+        // Re-render status bar image & live tooltip only when accounts, settings, or theme actually change
         Publishers.CombineLatest4(
             viewModel.$accounts,
             viewModel.$settings.map(\.menuBarDisplayMode).removeDuplicates(),
@@ -63,6 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         .debounce(for: .milliseconds(60), scheduler: RunLoop.main)
         .sink { [weak self] _, _, _, _ in
             self?.updateStatusItemImage()
+            self?.updateStatusItemTooltip()
         }
         .store(in: &cancellables)
 
@@ -159,10 +160,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func updateStatusItemTooltip() {
-        statusItem?.button?.toolTip = viewModel.l10n.t(
-            "ClaudeSYNC — Sol tık: Hızlı Menü · Sağ tık: Kısayollar",
-            "ClaudeSYNC — Left-click: Quick Menu · Right-click: Shortcuts"
-        )
+        let l10n = viewModel.l10n
+        guard !viewModel.accounts.isEmpty else {
+            statusItem?.button?.toolTip = l10n.t(
+                "ClaudeSYNC — Sol tık: Hızlı Menü · Sağ tık: Kısayollar",
+                "ClaudeSYNC — Left-click: Quick Menu · Right-click: Shortcuts"
+            )
+            return
+        }
+        let lines: [String] = viewModel.accounts.prefix(2).map { acc in
+            guard let u = acc.usage else {
+                return "\(acc.displayName): —"
+            }
+            var parts: [String] = []
+            if let fh = u.fiveHourPercent {
+                let resetTag = u.fiveHourResetsAt.map { " (\(l10n.compactReset($0)))" } ?? ""
+                parts.append("\(l10n.t("5s", "5h")) \(l10n.percent(fh))\(resetTag)")
+            }
+            if let sd = u.sevenDayPercent {
+                let resetTag = u.sevenDayResetsAt.map { " (\(l10n.compactReset($0)))" } ?? ""
+                parts.append("\(l10n.t("7g", "7d")) \(l10n.percent(sd))\(resetTag)")
+            }
+            let summary = parts.isEmpty ? "—" : parts.joined(separator: " · ")
+            return "\(acc.displayName): \(summary)"
+        }
+        statusItem?.button?.toolTip = "ClaudeSYNC\n" + lines.joined(separator: "\n")
     }
 
     private func updateStatusItemImage() {

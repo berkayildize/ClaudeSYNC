@@ -33,6 +33,10 @@ struct L10n: Equatable {
         LocalizedDateFormatter.shortClockTime(date, isTurkish: isTurkish)
     }
 
+    func compactReset(_ date: Date) -> String {
+        LocalizedDateFormatter.compactResetTime(date, isTurkish: isTurkish)
+    }
+
     func profileDisplayName(_ rawName: String, isDefault: Bool) -> String {
         if isDefault && (rawName == "Ana Profil" || rawName == "Primary Profile") {
             return isTurkish ? "Ana Profil" : "Primary Profile"
