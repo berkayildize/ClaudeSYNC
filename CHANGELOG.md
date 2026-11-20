@@ -5,6 +5,16 @@ Each release is packaged as a standalone macOS `.dmg` under [GitHub Releases](ht
 
 ---
 
+## [v0.0.5] — 2026-11-20
+
+### Custom Retina macOS DMG Installer UI
+
+#### Added
+- **Custom Styled Retina DMG Installer (`660×420 @2x` multi-rep TIFF):** Opening the `.dmg` now presents a flat matte-obsidian Apple-grade installer window with zero toolbar/sidebar clutter, symmetrical `APPLICATION → DROP HERE` cards, bilingual drag-to-Applications instructions, custom `.VolumeIcon.icns`, and exact Finder `.DS_Store` icon alignment (`108pt` crisp icons).
+- **Automated DMG Artwork Generator (`scripts/generate-dmg-bg.swift`):** Renders versioned `@1x` (72 DPI) and `@2x` (144 DPI) backgrounds dynamically from `VERSION` and packs them with `tiffutil -cathidpicheck` during `scripts/build-app.sh --dmg`.
+
+---
+
 ## [v0.0.4] — 2026-11-20
 
 ### Critical Bug Fix: True Profile Ownership Detection & Reliable Two-Way Switching

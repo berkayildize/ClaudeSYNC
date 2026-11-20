@@ -98,7 +98,7 @@ ClaudeSYNC bridges those local session cards safely so switching profiles preser
 
 ### Option 1: Download Prebuilt DMG (Recommended)
 
-1. Download **`ClaudeSYNC-v0.0.4-macOS.dmg`** from [**GitHub Releases**](https://github.com/berkayildize/ClaudeSYNC/releases/latest) (see [CHANGELOG.md](CHANGELOG.md) for version history).
+1. Download **`ClaudeSYNC-v0.0.5-macOS.dmg`** from [**GitHub Releases**](https://github.com/berkayildize/ClaudeSYNC/releases/latest) (see [CHANGELOG.md](CHANGELOG.md) for version history).
 2. Drag **`ClaudeSYNC.app`** into your **`Applications`** folder.
 3. Because this is an unsigned open-source release, right-click `ClaudeSYNC.app` → **Open** on first launch, or clear quarantine:
    ```bash
