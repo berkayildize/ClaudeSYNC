@@ -569,17 +569,19 @@ final class ClaudeSYNCTests: XCTestCase {
     }
 
     func testBilingualLocalizationAndOnboardingSettingsPersistence() throws {
-        // Default settings should require onboarding on first run & support system language
+        // Default settings should require onboarding, default to single-window mode, & support system language
         let fresh = BridgeSettings()
         XCTAssertFalse(fresh.hasCompletedOnboarding)
         XCTAssertEqual(fresh.language, .system)
+        XCTAssertTrue(fresh.singleWindowMode)
 
-        // Encode/decode roundtrip preserving language & onboarding flag
-        var custom = BridgeSettings(language: .english, hasCompletedOnboarding: true)
+        // Encode/decode roundtrip preserving language, onboarding & singleWindowMode flag
+        var custom = BridgeSettings(language: .english, hasCompletedOnboarding: true, singleWindowMode: false)
         let encoded = try JSONEncoder().encode(custom)
         let decoded = try JSONDecoder().decode(BridgeSettings.self, from: encoded)
         XCTAssertEqual(decoded.language, .english)
         XCTAssertTrue(decoded.hasCompletedOnboarding)
+        XCTAssertFalse(decoded.singleWindowMode)
         XCTAssertFalse(decoded.language.resolvedIsTurkish)
 
         custom.language = .turkish
@@ -597,6 +599,52 @@ final class ClaudeSYNCTests: XCTestCase {
         XCTAssertEqual(ProfileConfig.defaultProfile.localizedName(isTurkish: false), "Primary Profile")
         XCTAssertEqual(MenuBarDisplayMode.iconAndActiveUsage.title(isTurkish: false), "Active 5h/7d")
         XCTAssertEqual(MenuBarDisplayMode.iconAndActiveUsage.title(isTurkish: true), "Aktif 5s/7g")
+    }
+
+    func testSingleWindowDiscoveryMarksOnlyRunningProfileActive() throws {
+        let fm = FileManager.default
+        let p1 = tempRoot.appendingPathComponent("Claude", isDirectory: true)
+        let p2 = tempRoot.appendingPathComponent("Claude-Account2", isDirectory: true)
+
+        let acc1 = "11111111-1111-4000-8000-000000000001"
+        let org1 = "22222222-2222-4000-8000-000000000001"
+        let acc2 = "33333333-3333-4000-8000-000000000002"
+        let org2 = "44444444-4444-4000-8000-000000000002"
+
+        let dir1 = p1.appendingPathComponent("claude-code-sessions/\(acc1)/\(org1)", isDirectory: true)
+        let dir2 = p2.appendingPathComponent("claude-code-sessions/\(acc2)/\(org2)", isDirectory: true)
+        try fm.createDirectory(at: dir1, withIntermediateDirectories: true)
+        try fm.createDirectory(at: dir2, withIntermediateDirectories: true)
+
+        try writeSessionJSON(in: dir1, sessionId: "local_1", cliSessionId: "cli-1", title: "P1", cwd: "/tmp", turns: 10, lastActivityMs: 1_795_000_000_000)
+        try writeSessionJSON(in: dir2, sessionId: "local_2", cliSessionId: "cli-2", title: "P2", cwd: "/tmp", turns: 5, lastActivityMs: 1_794_000_000_000)
+
+        // Only Profile 2 is running (Single-Window Mode after switching!)
+        let snap = ProcessSnapshot(
+            runningInstances: [
+                RunningClaudeInstance(pid: 7777, dataDir: p2.standardizedFileURL.path, isDefaultProfile: false)
+            ],
+            liveCliSessionIds: [],
+            activeAccountOrgPairs: []
+        )
+
+        let discovery = SessionDiscovery(claudeProjectsDir: tempRoot.appendingPathComponent("empty"))
+        let slots = discovery.discoverAccounts(
+            profiles: [
+                ProfileConfig(id: "default", name: "Ana Profil", dataDirPath: p1.path, isDefault: true),
+                ProfileConfig(id: "secondary-account-2", name: "2. Profil", dataDirPath: p2.path, isDefault: false)
+            ],
+            nicknames: [:],
+            processSnapshot: snap
+        )
+
+        XCTAssertEqual(slots.count, 2)
+        let slot1 = try XCTUnwrap(slots.first { $0.accountUuid == acc1 })
+        let slot2 = try XCTUnwrap(slots.first { $0.accountUuid == acc2 })
+        XCTAssertFalse(slot1.isActiveAccount)
+        XCTAssertTrue(slot2.isActiveAccount)
+        XCTAssertEqual(slot2.runningPid, 7777)
+        XCTAssertNil(slot1.runningPid)
     }
 
     // MARK: - Helper

@@ -503,6 +503,8 @@ final class AppViewModel: ObservableObject {
         isBusy = true
 
         let opts = settings.transferOptions
+        let singleWindow = settings.singleWindowMode
+        let runningPids = processSnapshot.runningInstances.map(\.pid)
         let engine = syncEngine
         let mon = processMonitor
         let notify = settings.autoSwitchNotify
@@ -518,7 +520,13 @@ final class AppViewModel: ObservableObject {
             var switchedWindow = false
             if decision.isZeroLogoutReady {
                 do {
-                    if let pid = decision.target.runningPid {
+                    if singleWindow {
+                        try await mon.switchSingleWindow(
+                            closingPids: runningPids,
+                            targetDataDir: decision.target.profileDataDir,
+                            targetIsDefault: decision.target.isDefaultProfile
+                        )
+                    } else if let pid = decision.target.runningPid {
                         try await mon.gracefulRestart(
                             pid: pid,
                             dataDir: decision.target.profileDataDir,
@@ -527,7 +535,8 @@ final class AppViewModel: ObservableObject {
                     } else {
                         try mon.launchProfile(
                             dataDir: decision.target.profileDataDir,
-                            isDefault: decision.target.isDefaultProfile
+                            isDefault: decision.target.isDefaultProfile,
+                            allowMultipleInstances: true
                         )
                     }
                     switchedWindow = true
@@ -605,6 +614,8 @@ final class AppViewModel: ObservableObject {
         isBusy = true
 
         let opts = settings.transferOptions
+        let singleWindow = settings.singleWindowMode
+        let runningPids = processSnapshot.runningInstances.map(\.pid)
         let engine = syncEngine
         let mon = processMonitor
 
@@ -618,14 +629,24 @@ final class AppViewModel: ObservableObject {
 
             if crossProfile {
                 do {
-                    if let pid = dst.runningPid {
+                    if singleWindow {
+                        try await mon.switchSingleWindow(
+                            closingPids: runningPids,
+                            targetDataDir: dst.profileDataDir,
+                            targetIsDefault: dst.isDefaultProfile
+                        )
+                    } else if let pid = dst.runningPid {
                         try await mon.gracefulRestart(
                             pid: pid,
                             dataDir: dst.profileDataDir,
                             isDefault: dst.isDefaultProfile
                         )
                     } else {
-                        try mon.launchProfile(dataDir: dst.profileDataDir, isDefault: dst.isDefaultProfile)
+                        try mon.launchProfile(
+                            dataDir: dst.profileDataDir,
+                            isDefault: dst.isDefaultProfile,
+                            allowMultipleInstances: true
+                        )
                     }
                     self.sourceAccountId = dst.id
                     self.targetAccountId = src.id
@@ -948,18 +969,30 @@ final class AppViewModel: ObservableObject {
     func launchOrReloadProfile(forAccountId accountId: String) {
         guard let account = accounts.first(where: { $0.id == accountId }) else { return }
         let mon = processMonitor
+        let singleWindow = settings.singleWindowMode
+        let runningPids = processSnapshot.runningInstances.map(\.pid)
         isBusy = true
 
         Task {
             do {
-                if let pid = account.runningPid {
+                if singleWindow {
+                    try await mon.switchSingleWindow(
+                        closingPids: runningPids,
+                        targetDataDir: account.profileDataDir,
+                        targetIsDefault: account.isDefaultProfile
+                    )
+                } else if let pid = account.runningPid {
                     try await mon.gracefulRestart(
                         pid: pid,
                         dataDir: account.profileDataDir,
                         isDefault: account.isDefaultProfile
                     )
                 } else {
-                    try mon.launchProfile(dataDir: account.profileDataDir, isDefault: account.isDefaultProfile)
+                    try mon.launchProfile(
+                        dataDir: account.profileDataDir,
+                        isDefault: account.isDefaultProfile,
+                        allowMultipleInstances: true
+                    )
                 }
                 self.isBusy = false
                 self.statusBanner = StatusBanner(
@@ -987,10 +1020,42 @@ final class AppViewModel: ObservableObject {
             $0.dataDir == dir.path || (profile.isDefault && $0.isDefaultProfile)
         }) {
             _ = processMonitor.activateInstance(pid: running.pid)
+            return
+        }
+
+        let displayName = l10n.profileDisplayName(profile.name, isDefault: profile.isDefault)
+        if settings.singleWindowMode {
+            let mon = processMonitor
+            let runningPids = processSnapshot.runningInstances.map(\.pid)
+            isBusy = true
+            Task {
+                do {
+                    try await mon.switchSingleWindow(
+                        closingPids: runningPids,
+                        targetDataDir: dir,
+                        targetIsDefault: profile.isDefault
+                    )
+                    self.isBusy = false
+                    self.statusBanner = StatusBanner(
+                        kind: .success,
+                        title: self.l10n.t("Tek pencerede \(displayName) açıldı", "Switched to \(displayName)"),
+                        detail: self.l10n.t("Diğer hesap kapatıldı; bu hesapta çıkış yapmadan devam edebilirsiniz.", "Previous Claude window closed cleanly; continuing in \(displayName)."),
+                        quickAction: nil
+                    )
+                    self.refresh()
+                } catch {
+                    self.isBusy = false
+                    self.statusBanner = StatusBanner(
+                        kind: .error,
+                        title: self.l10n.t("Profil başlatılamadı", "Could not launch profile"),
+                        detail: error.localizedDescription,
+                        quickAction: nil
+                    )
+                }
+            }
         } else {
             do {
-                try processMonitor.launchProfile(dataDir: dir, isDefault: profile.isDefault)
-                let displayName = l10n.profileDisplayName(profile.name, isDefault: profile.isDefault)
+                try processMonitor.launchProfile(dataDir: dir, isDefault: profile.isDefault, allowMultipleInstances: true)
                 statusBanner = StatusBanner(
                     kind: .info,
                     title: l10n.t("\(displayName) başlatılıyor", "Launching \(displayName)"),
@@ -1014,12 +1079,18 @@ final class AppViewModel: ObservableObject {
         let runningPid = processSnapshot.runningInstances.first(where: {
             $0.dataDir == dir.path || (profile.isDefault && $0.isDefaultProfile)
         })?.pid
+        let allPids = processSnapshot.runningInstances.map(\.pid)
+        let singleWindow = settings.singleWindowMode
         let mon = processMonitor
         isBusy = true
 
         Task {
             do {
-                try await mon.gracefulRestart(pid: runningPid, dataDir: dir, isDefault: profile.isDefault)
+                if singleWindow {
+                    try await mon.switchSingleWindow(closingPids: allPids, targetDataDir: dir, targetIsDefault: profile.isDefault)
+                } else {
+                    try await mon.gracefulRestart(pid: runningPid, dataDir: dir, isDefault: profile.isDefault)
+                }
                 self.isBusy = false
                 let displayName = self.l10n.profileDisplayName(profile.name, isDefault: profile.isDefault)
                 self.statusBanner = StatusBanner(
@@ -1079,8 +1150,6 @@ final class AppViewModel: ObservableObject {
                 preferencesStore.save(settings)
             }
 
-            try processMonitor.launchProfile(dataDir: profile.expandedURL, isDefault: false)
-
             var extras: [String] = []
             if copiedMcp { extras.append(l10n.t("yerel MCP ayarları", "local MCP config")) }
             if let migrated = migrateAccount {
@@ -1090,16 +1159,53 @@ final class AppViewModel: ObservableObject {
                 ? ""
                 : l10n.t(" (\(extras.joined(separator: " + ")) aktarıldı)", " (copied \(extras.joined(separator: " + ")))")
 
-            statusBanner = StatusBanner(
-                kind: .success,
-                title: l10n.t("Çıkışsız 2. Profil Başlatıldı", "Isolated Profile 2 Launched"),
-                detail: l10n.t(
-                    "Açılan pencerede 2. Ultra hesabınızla 1 kez giriş yapın; bundan sonra çıkış yapmadan otomatik geçiş çalışır.\(extraNote)",
-                    "Sign in once with your second Claude account in the launched window; future switches require zero logout.\(extraNote)"
-                ),
-                quickAction: nil
-            )
-            refresh()
+            if settings.singleWindowMode {
+                // Close Profile 1 first so ONLY Profile 2 runs — guarantees 1 Dock icon AND Gmail/Google claude:// OAuth routes directly to Profile 2!
+                let mon = processMonitor
+                let runningPids = processSnapshot.runningInstances.map(\.pid)
+                let targetDir = profile.expandedURL
+                isBusy = true
+                Task {
+                    do {
+                        try await mon.switchSingleWindow(
+                            closingPids: runningPids,
+                            targetDataDir: targetDir,
+                            targetIsDefault: false
+                        )
+                        self.isBusy = false
+                        self.statusBanner = StatusBanner(
+                            kind: .success,
+                            title: self.l10n.t("2. Hesap Tek Pencerede Açıldı", "Account 2 Opened in Single Window"),
+                            detail: self.l10n.t(
+                                "Mevcut Claude kapatıldı. Şimdi 2. hesabınızla Gmail/Google veya E-posta ile 1 kez giriş yapın; bundan sonra çıkış yapmadan tek pencerede otomatik geçiş çalışır.\(extraNote)",
+                                "Primary Claude closed cleanly so Google/Gmail OAuth routes straight here. Sign in once with Account 2 — future switches run autonomously in a single window.\(extraNote)"
+                            ),
+                            quickAction: nil
+                        )
+                        self.refresh()
+                    } catch {
+                        self.isBusy = false
+                        self.statusBanner = StatusBanner(
+                            kind: .error,
+                            title: self.l10n.t("2. profil başlatılamadı", "Could not launch Profile 2"),
+                            detail: error.localizedDescription,
+                            quickAction: nil
+                        )
+                    }
+                }
+            } else {
+                try processMonitor.launchProfile(dataDir: profile.expandedURL, isDefault: false, allowMultipleInstances: true)
+                statusBanner = StatusBanner(
+                    kind: .success,
+                    title: l10n.t("Çıkışsız 2. Profil Başlatıldı", "Isolated Profile 2 Launched"),
+                    detail: l10n.t(
+                        "Paralel modda 2. pencere açıldı. Gmail OAuth ana pencereye giderse E-posta ile giriş yapın veya Tek Pencere Modunu kullanın.\(extraNote)",
+                        "Launched side-by-side window. Use Email sign-in if Google OAuth routes to your primary window, or enable Single Window Mode.\(extraNote)"
+                    ),
+                    quickAction: nil
+                )
+                refresh()
+            }
         } catch {
             statusBanner = StatusBanner(
                 kind: .error,

@@ -45,31 +45,70 @@ struct ProfilesManagerView: View {
     }
 
     private var headerExplanationCard: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(Color.primary.opacity(0.08))
-                    .frame(width: 36, height: 36)
-                Image(systemName: "macwindow.on.rectangle")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.primary)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(Color.primary.opacity(0.08))
+                        .frame(width: 36, height: 36)
+                    Image(systemName: "macwindow.on.rectangle")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.primary)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(
+                        viewModel.settings.singleWindowMode
+                            ? l10n.t("Tek Pencere Otonom Geçiş (Önerilen)", "Single-Window Autonomous Switch (Recommended)")
+                            : l10n.t("Paralel Çift Pencere Modu", "Parallel Dual-Window Mode")
+                    )
+                    .font(.system(size: 13, weight: .semibold))
+                    Text(
+                        viewModel.settings.singleWindowMode
+                            ? l10n.t(
+                                "Her zaman yalnızca 1 Claude Desktop açık kalır. Geçişte mevcut pencere güvenle kapanır ve aynı uygulama diğer hesap oturumuyla anında açılır — Gmail/Google ile giriş sorunsuz çalışır.",
+                                "Only 1 Claude Desktop window runs at a time. Switching closes the active window and reopens directly in the other account — Google/Gmail OAuth works natively."
+                            )
+                            : l10n.t(
+                                "İki Claude Desktop penceresi aynı anda açık kalır. Not: Paralel modda 2. pencereye ilk girişte macOS claude:// yönlendirmesini 1. pencereye gönderebilir; ilk giriş için Tek Pencere Modu önerilir.",
+                                "Two Claude Desktop windows stay open side by side. Note: during first-time Google OAuth login, macOS routes claude:// to the first window; use Single-Window Mode or Email login."
+                            )
+                    )
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 0)
             }
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(l10n.t("Çıkışsız Çift Profil Mimarisi", "Zero-Logout Dual Profile Architecture"))
-                    .font(.system(size: 13, weight: .semibold))
-                Text(
-                    l10n.t(
-                        "Her profil Claude Desktop'ı kendi --user-data-dir klasörüyle izole çalıştırır. İki Ultra hesabınız da sürekli giriş yapılı kalır; limit dolunca çıkış yapmadan anında geçebilirsiniz.",
-                        "Each profile runs Claude Desktop isolated with its own --user-data-dir folder. Stay permanently signed into both accounts and switch instantly when limits hit."
+            Divider().opacity(0.4)
+
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(l10n.t("Tek Claude Penceresi Modu (2. uygulama açma)", "Single Claude Window Mode (No duplicate app)"))
+                        .font(.system(size: 11.5, weight: .semibold))
+                    Text(
+                        l10n.t(
+                            "Açıkken Dock'ta yalnızca tek Claude çalışır; hesap değişiminde eski pencere kapanıp yeni hesap açılır.",
+                            "When ON, only one Claude Desktop runs in your Dock; switching replaces the active session cleanly."
+                        )
+                    )
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { viewModel.settings.singleWindowMode },
+                        set: { val in viewModel.updateSettings { $0.singleWindowMode = val } }
                     )
                 )
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
             }
-
-            Spacer(minLength: 0)
         }
         .padding(14)
         .liquidGlassCard(cornerRadius: BridgeTheme.cardRadius)
@@ -148,7 +187,11 @@ struct ProfilesManagerView: View {
             Spacer(minLength: 8)
 
             HStack(spacing: 6) {
-                Button(running != nil ? l10n.t("Öne Al", "Focus") : l10n.t("Başlat", "Launch")) {
+                Button(
+                    running != nil
+                        ? l10n.t("Öne Al", "Focus")
+                        : (viewModel.settings.singleWindowMode ? l10n.t("Bu Hesaba Geç", "Switch Here") : l10n.t("Başlat", "Launch"))
+                ) {
                     viewModel.focusOrLaunchProfile(profile)
                 }
                 .nativeGlassButton(prominent: running == nil)

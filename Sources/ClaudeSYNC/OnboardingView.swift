@@ -541,12 +541,12 @@ struct OnboardingView: View {
 
         return VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(l10n.t("Çıkışsız Çift Profil Kurulumu", "Zero-Logout Dual Profile Setup"))
+                Text(l10n.t("Tek Pencere Çıkışsız Hesap Geçişi", "Single-Window Zero-Logout Switching"))
                     .font(.system(size: 20, weight: .bold))
                 Text(
                     l10n.t(
-                        "2. Claude hesabınız için izole bir --user-data-dir profili oluşturun. İki hesap aynı anda giriş yapılı kalır; limit dolduğunda çıkış/giriş yapmadan tek tıkla geçersiniz.",
-                        "Create an isolated --user-data-dir profile for your second Claude account. Both accounts stay permanently logged in for instant switching when limits hit."
+                        "2. hesabınız için izole bir profil oluşturun. Tek Pencere Modu sayesinde Dock'ta yalnızca 1 Claude çalışır: geçişte mevcut pencere kapanıp diğer hesap doğrudan açılır ve Gmail/Google ile ilk giriş sorunsuz çalışır.",
+                        "Create an isolated profile for your 2nd account. Single-Window Mode keeps only 1 Claude app running — switching closes the active window, opens the other account directly, and lets Google/Gmail OAuth route cleanly."
                     )
                 )
                 .font(.system(size: 12))

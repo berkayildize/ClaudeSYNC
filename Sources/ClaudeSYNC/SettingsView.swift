@@ -352,6 +352,26 @@ struct SettingsView: View {
         sectionCard(title: l10n.t("Otomatik Eşitleme & Güvenlik", "Auto Sync & Safety"), icon: "arrow.triangle.2.circlepath.circle.fill") {
             VStack(alignment: .leading, spacing: 7) {
                 Toggle(
+                    l10n.t("Tek Claude penceresinde otonom geçiş (2. uygulama açma)", "Single Claude window switching (never open a 2nd app)"),
+                    isOn: Binding(
+                        get: { viewModel.settings.singleWindowMode },
+                        set: { val in viewModel.updateSettings { $0.singleWindowMode = val } }
+                    )
+                )
+                .font(.system(size: 11, weight: .medium))
+
+                Text(
+                    l10n.t(
+                        "Açıkken hesap değiştirildiğinde mevcut Claude güvenle kapanıp diğer hesap açılır. Dock'ta tek Claude kalır ve Gmail/Google ile ilk giriş sorunsuz çalışır.",
+                        "When ON, switching closes the current Claude window and reopens directly in the other account — keeping 1 Dock icon and ensuring Google/Gmail OAuth works cleanly."
+                    )
+                )
+                .font(.system(size: 9.5))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.bottom, 3)
+
+                Toggle(
                     l10n.t("Ortak oturum kartlarını arka planda otomatik eşitle", "Automatically mirror shared session cards in background"),
                     isOn: Binding(
                         get: { viewModel.settings.autoSyncSharedCards },

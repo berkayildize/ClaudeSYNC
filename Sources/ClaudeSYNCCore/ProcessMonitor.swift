@@ -122,7 +122,7 @@ public struct ProcessMonitor: Sendable {
         return app.activate(options: [.activateAllWindows])
     }
 
-    public func launchProfile(dataDir: URL, isDefault: Bool) throws {
+    public func launchProfile(dataDir: URL, isDefault: Bool, allowMultipleInstances: Bool = true) throws {
         guard FileManager.default.fileExists(atPath: Self.claudeAppPath) else {
             throw ProcessMonitorError.claudeAppNotFound
         }
@@ -131,9 +131,16 @@ public struct ProcessMonitor: Sendable {
         process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         if isDefault {
             process.arguments = ["-a", Self.claudeAppPath]
-        } else {
+        } else if allowMultipleInstances {
             process.arguments = [
                 "-n",
+                "-a", Self.claudeAppPath,
+                "--args",
+                "--user-data-dir=\(dataDir.standardizedFileURL.path)"
+            ]
+        } else {
+            // Single-instance launch: macOS LaunchServices binds claude:// OAuth callbacks directly to this window
+            process.arguments = [
                 "-a", Self.claudeAppPath,
                 "--args",
                 "--user-data-dir=\(dataDir.standardizedFileURL.path)"
@@ -150,36 +157,65 @@ public struct ProcessMonitor: Sendable {
         }
     }
 
-    public func gracefulRestart(pid: Int32?, dataDir: URL, isDefault: Bool) async throws {
-        if let pid {
-            let terminated: Bool = await MainActor.run {
-                guard let app = NSRunningApplication(processIdentifier: pid) else { return true }
-                app.terminate()
-                return false
-            }
+    /// Gracefully terminates all specified Claude Desktop PIDs and waits until they fully exit.
+    public func gracefulTerminate(pids: [Int32]) async throws {
+        let uniquePids = Array(Set(pids))
+        guard !uniquePids.isEmpty else { return }
 
-            if !terminated {
-                // Poll cleanly up to 6 seconds (every 150ms) for graceful shutdown
-                var exited = false
-                for _ in 0..<40 {
-                    try await Task.sleep(nanoseconds: 150_000_000)
-                    let stillAlive: Bool = await MainActor.run {
-                        NSRunningApplication(processIdentifier: pid) != nil
-                    }
-                    if !stillAlive {
-                        exited = true
-                        break
-                    }
-                }
-                if !exited {
-                    throw ProcessMonitorError.gracefulQuitTimedOut
+        let alivePids: [Int32] = await MainActor.run {
+            var remaining: [Int32] = []
+            for pid in uniquePids {
+                if let app = NSRunningApplication(processIdentifier: pid) {
+                    app.terminate()
+                    remaining.append(pid)
                 }
             }
-            // Brief settle pause so Electron releases locks cleanly
-            try await Task.sleep(nanoseconds: 350_000_000)
+            return remaining
         }
 
-        try launchProfile(dataDir: dataDir, isDefault: isDefault)
+        if !alivePids.isEmpty {
+            var allExited = false
+            for _ in 0..<45 {
+                try await Task.sleep(nanoseconds: 150_000_000)
+                let anyStillAlive: Bool = await MainActor.run {
+                    alivePids.contains { NSRunningApplication(processIdentifier: $0) != nil }
+                }
+                if !anyStillAlive {
+                    allExited = true
+                    break
+                }
+            }
+            if !allExited {
+                throw ProcessMonitorError.gracefulQuitTimedOut
+            }
+            // Brief settle pause so Electron releases profile file locks & LaunchServices unregisters old instance
+            try await Task.sleep(nanoseconds: 400_000_000)
+        }
+    }
+
+    /// Single-Window Autonomous Switch: closes all running Claude Desktop instances and opens ONLY the target profile.
+    /// Because only one Claude.app instance runs, macOS Dock shows 1 icon AND `claude://` Google OAuth callbacks route cleanly to it.
+    public func switchSingleWindow(
+        closingPids: [Int32],
+        targetDataDir: URL,
+        targetIsDefault: Bool
+    ) async throws {
+        // Also pick up any live Claude.app PIDs registered with NSRunningApplication just in case ps was slightly stale
+        let allRunningClaudePids: [Int32] = await MainActor.run {
+            let fromWorkspace = NSRunningApplication
+                .runningApplications(withBundleIdentifier: "com.anthropic.claudefordesktop")
+                .map(\.processIdentifier)
+            return Array(Set(closingPids + fromWorkspace))
+        }
+        try await gracefulTerminate(pids: allRunningClaudePids)
+        try launchProfile(dataDir: targetDataDir, isDefault: targetIsDefault, allowMultipleInstances: false)
+    }
+
+    public func gracefulRestart(pid: Int32?, dataDir: URL, isDefault: Bool) async throws {
+        if let pid {
+            try await gracefulTerminate(pids: [pid])
+        }
+        try launchProfile(dataDir: dataDir, isDefault: isDefault, allowMultipleInstances: true)
     }
 
     private func runCommand(_ path: String, arguments: [String]) -> String? {

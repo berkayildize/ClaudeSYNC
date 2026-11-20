@@ -185,27 +185,35 @@ public final class SessionDiscovery: @unchecked Sendable {
                 }
             }
 
-            // Within a single profile, ensure exactly one account is marked active
+            // Within a single profile, mark active account accurately:
+            // If any Claude Desktop instance is running on the system, ONLY running profile(s) can be active.
+            let anyInstanceRunning = !processSnapshot.runningInstances.isEmpty
             if !profileSlots.isEmpty {
-                let agentActiveIndices = profileSlots.indices.filter { profileSlots[$0].isActiveAccount }
-                let chosenIdx: Int
-                if agentActiveIndices.count == 1 {
-                    chosenIdx = agentActiveIndices[0]
+                if anyInstanceRunning && runningInstance == nil {
+                    for i in profileSlots.indices {
+                        profileSlots[i].isActiveAccount = false
+                    }
                 } else {
-                    let pool = agentActiveIndices.isEmpty ? Array(profileSlots.indices) : agentActiveIndices
-                    chosenIdx = pool.max(by: { lhs, rhs in
-                        let lUsageDate = profileSlots[lhs].usage?.updatedAt ?? .distantPast
-                        let rUsageDate = profileSlots[rhs].usage?.updatedAt ?? .distantPast
-                        if abs(lUsageDate.timeIntervalSince(rUsageDate)) > 5 {
-                            return lUsageDate < rUsageDate
-                        }
-                        let lSessDate = profileSlots[lhs].sessions.first?.effectiveTimestamp ?? .distantPast
-                        let rSessDate = profileSlots[rhs].sessions.first?.effectiveTimestamp ?? .distantPast
-                        return lSessDate < rSessDate
-                    }) ?? 0
-                }
-                for i in profileSlots.indices {
-                    profileSlots[i].isActiveAccount = (i == chosenIdx)
+                    let agentActiveIndices = profileSlots.indices.filter { profileSlots[$0].isActiveAccount }
+                    let chosenIdx: Int
+                    if agentActiveIndices.count == 1 {
+                        chosenIdx = agentActiveIndices[0]
+                    } else {
+                        let pool = agentActiveIndices.isEmpty ? Array(profileSlots.indices) : agentActiveIndices
+                        chosenIdx = pool.max(by: { lhs, rhs in
+                            let lUsageDate = profileSlots[lhs].usage?.updatedAt ?? .distantPast
+                            let rUsageDate = profileSlots[rhs].usage?.updatedAt ?? .distantPast
+                            if abs(lUsageDate.timeIntervalSince(rUsageDate)) > 5 {
+                                return lUsageDate < rUsageDate
+                            }
+                            let lSessDate = profileSlots[lhs].sessions.first?.effectiveTimestamp ?? .distantPast
+                            let rSessDate = profileSlots[rhs].sessions.first?.effectiveTimestamp ?? .distantPast
+                            return lSessDate < rSessDate
+                        }) ?? 0
+                    }
+                    for i in profileSlots.indices {
+                        profileSlots[i].isActiveAccount = (i == chosenIdx)
+                    }
                 }
             }
 

@@ -21,6 +21,7 @@ public struct BridgeSettings: Codable, Equatable, Sendable {
     public var lastAutoSwitchEventKey: String?
     public var language: AppLanguage
     public var hasCompletedOnboarding: Bool
+    public var singleWindowMode: Bool
 
     public init(
         accountNicknames: [String: String] = [:],
@@ -42,7 +43,8 @@ public struct BridgeSettings: Codable, Equatable, Sendable {
         menuBarDisplayMode: MenuBarDisplayMode = .iconAndBothAccounts,
         lastAutoSwitchEventKey: String? = nil,
         language: AppLanguage = .system,
-        hasCompletedOnboarding: Bool = false
+        hasCompletedOnboarding: Bool = false,
+        singleWindowMode: Bool = true
     ) {
         self.accountNicknames = accountNicknames
         self.secondaryProfiles = secondaryProfiles
@@ -64,6 +66,7 @@ public struct BridgeSettings: Codable, Equatable, Sendable {
         self.lastAutoSwitchEventKey = lastAutoSwitchEventKey
         self.language = language
         self.hasCompletedOnboarding = hasCompletedOnboarding
+        self.singleWindowMode = singleWindowMode
     }
 
     public init(from decoder: Decoder) throws {
@@ -88,6 +91,7 @@ public struct BridgeSettings: Codable, Equatable, Sendable {
         lastAutoSwitchEventKey = try c.decodeIfPresent(String.self, forKey: .lastAutoSwitchEventKey)
         language = try c.decodeIfPresent(AppLanguage.self, forKey: .language) ?? .system
         hasCompletedOnboarding = try c.decodeIfPresent(Bool.self, forKey: .hasCompletedOnboarding) ?? false
+        singleWindowMode = try c.decodeIfPresent(Bool.self, forKey: .singleWindowMode) ?? true
     }
 
     public var transferOptions: TransferOptions {
