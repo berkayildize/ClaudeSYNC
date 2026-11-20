@@ -223,7 +223,7 @@ struct SessionsWorkspaceView: View {
 
     private var unifiedActionRail: some View {
         HStack(spacing: 8) {
-            if viewModel.isCrossProfileMode {
+            if viewModel.isCrossProfileMode, let target = viewModel.targetAccount {
                 Button {
                     viewModel.instantSwitchToTarget()
                 } label: {
@@ -236,7 +236,7 @@ struct SessionsWorkspaceView: View {
                             Image(systemName: "arrow.left.arrow.right")
                                 .font(.system(size: 10.5, weight: .semibold))
                         }
-                        Text(l10n.t("Çıkışsız Geçiş Yap", "Instant Switch"))
+                        Text(l10n.t("\(target.displayName) Hesabına Geç", "Switch to \(target.displayName)"))
                             .font(.system(size: 11, weight: .semibold))
                             .lineLimit(1)
                     }
@@ -245,12 +245,43 @@ struct SessionsWorkspaceView: View {
                     .background(Capsule().fill(BridgeTheme.primaryAccent))
                 }
                 .buttonStyle(TactileScaleButtonStyle())
-                .disabled(viewModel.isBusy || viewModel.targetAccount == nil)
+                .disabled(viewModel.isBusy)
                 .help(
                     l10n.t(
-                        "Canlı oturumları aktarır ve çıkış yapmadan hedef hesabın penceresine geçer",
-                        "Transfers live sessions and switches to the target account window without logging out"
+                        "Aktif oturumu \(target.displayName) hesabına aktarır ve tek pencerede doğrudan \(target.displayName) oturumunu açar",
+                        "Transfers active session to \(target.displayName) and switches directly into \(target.displayName)"
                     )
+                )
+            } else if let secondary = viewModel.settings.secondaryProfiles.first {
+                let secondaryRunning = viewModel.runningInstance(for: secondary) != nil
+                Button {
+                    if secondaryRunning {
+                        viewModel.focusOrLaunchProfile(ProfileConfig.defaultProfile)
+                    } else {
+                        viewModel.focusOrLaunchProfile(secondary)
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "arrow.left.arrow.right")
+                            .font(.system(size: 10.5, weight: .semibold))
+                        Text(
+                            secondaryRunning
+                                ? l10n.t("Ana Profile Geç", "Switch to Primary Profile")
+                                : l10n.t("2. Profile Geç", "Switch to Profile 2")
+                        )
+                        .font(.system(size: 11, weight: .semibold))
+                        .lineLimit(1)
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, minHeight: 31, maxHeight: 31)
+                    .background(Capsule().fill(BridgeTheme.primaryAccent))
+                }
+                .buttonStyle(TactileScaleButtonStyle())
+                .disabled(viewModel.isBusy)
+                .help(
+                    secondaryRunning
+                        ? l10n.t("Ana Profil (1. Hesap) Claude Desktop penceresine geç", "Switch back to Primary Profile (Account 1)")
+                        : l10n.t("2. Profili açıp 2. hesabınızla giriş yapın", "Open Profile 2 and sign in with your 2nd account")
                 )
             } else {
                 Button {
@@ -271,7 +302,7 @@ struct SessionsWorkspaceView: View {
                 .disabled(viewModel.isBusy)
                 .help(
                     l10n.t(
-                        "2. profili oluşturup başlatır — bir kez giriş yaptıktan sonra çıkış/giriş olmadan otomatik geçiş çalışır",
+                        "2. profili oluşturup başlatır — bir kez giriş yaptıktan sonra çıkış/giriş olmadan tek pencerede geçiş çalışır",
                         "Creates and launches Profile 2 — sign in once to unlock instant zero-logout switching"
                     )
                 )

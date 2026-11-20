@@ -38,7 +38,7 @@ struct OnboardingView: View {
     @State private var newProfileName: String = ""
     @State private var newProfilePath: String = "~/Library/Application Support/Claude-Account2"
     @State private var copyMcpConfig: Bool = true
-    @State private var migrateExistingSessions: Bool = true
+    @State private var migrateExistingSessions: Bool = false
     @State private var createdProfileInWizard: Bool = false
 
     private var l10n: L10n { viewModel.l10n }

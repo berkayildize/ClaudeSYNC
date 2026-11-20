@@ -647,6 +647,69 @@ final class ClaudeSYNCTests: XCTestCase {
         XCTAssertNil(slot1.runningPid)
     }
 
+    func testSecondaryProfileWithOrphanPreCopiedAccountResolvesTrueOwnerAndKeepsPrimaryIntact() throws {
+        let fm = FileManager.default
+        let p1 = tempRoot.appendingPathComponent("Claude", isDirectory: true)
+        let p2 = tempRoot.appendingPathComponent("Claude-Account2", isDirectory: true)
+
+        let accA = "11111111-1111-4000-8000-000000000001"
+        let orgA = "aaaaaaaa-1111-4000-8000-000000000001"
+        let accB = "22222222-2222-4000-8000-000000000002"
+        let orgB = "bbbbbbbb-2222-4000-8000-000000000002"
+
+        // Profile 1 has both A (its true account) and older B
+        let p1A = p1.appendingPathComponent("claude-code-sessions/\(accA)/\(orgA)", isDirectory: true)
+        let p1B = p1.appendingPathComponent("claude-code-sessions/\(accB)/\(orgB)", isDirectory: true)
+        // Profile 2 accidentally received orphan pre-copied A, then user signed into B
+        let p2OrphanA = p2.appendingPathComponent("claude-code-sessions/\(accA)/\(orgA)", isDirectory: true)
+        let p2RealB = p2.appendingPathComponent("claude-code-sessions/\(accB)/\(orgB)", isDirectory: true)
+        // Claude Desktop wrote local-agent-mode-sessions/<accB> and plan-usage-history (orgB only) inside Profile 2
+        let p2AgentB = p2.appendingPathComponent("local-agent-mode-sessions/\(accB)", isDirectory: true)
+
+        for d in [p1A, p1B, p2OrphanA, p2RealB, p2AgentB] {
+            try fm.createDirectory(at: d, withIntermediateDirectories: true)
+        }
+
+        try writeSessionJSON(in: p1A, sessionId: "local_a1", cliSessionId: "cli-a1", title: "A Main", cwd: "/tmp", turns: 50, lastActivityMs: 1_795_000_000_000)
+        try writeSessionJSON(in: p1B, sessionId: "local_b1", cliSessionId: "cli-b1", title: "B Old", cwd: "/tmp", turns: 5, lastActivityMs: 1_794_000_000_000)
+        try writeSessionJSON(in: p2OrphanA, sessionId: "local_a1", cliSessionId: "cli-a1", title: "A Orphan Copy", cwd: "/tmp", turns: 50, lastActivityMs: 1_795_000_000_000)
+        try writeSessionJSON(in: p2RealB, sessionId: "local_b2", cliSessionId: "cli-b2", title: "B Active", cwd: "/tmp", turns: 2, lastActivityMs: 1_795_100_000_000)
+
+        let p2Usage = """
+        {"version":2,"samples":[{"t":1795100000000,"org":"\(orgB)","u":{"fh":10,"sd":100}}]}
+        """
+        try Data(p2Usage.utf8).write(to: p2.appendingPathComponent("plan-usage-history.json"))
+
+        // Profile 2 is running; Profile 1 is closed (Single-Window Mode)
+        let snap = ProcessSnapshot(
+            runningInstances: [
+                RunningClaudeInstance(pid: 8888, dataDir: p2.standardizedFileURL.path, isDefaultProfile: false)
+            ],
+            liveCliSessionIds: [],
+            activeAccountOrgPairs: []
+        )
+
+        let discovery = SessionDiscovery(claudeProjectsDir: tempRoot.appendingPathComponent("empty"))
+        let slots = discovery.discoverAccounts(
+            profiles: [
+                ProfileConfig(id: "default", name: "Ana Profil", dataDirPath: p1.path, isDefault: true),
+                ProfileConfig(id: "secondary-account-2", name: "2. Profil", dataDirPath: p2.path, isDefault: false)
+            ],
+            nicknames: [:],
+            processSnapshot: snap
+        )
+
+        XCTAssertEqual(slots.count, 2)
+        let slotA = try XCTUnwrap(slots.first { $0.accountUuid == accA })
+        let slotB = try XCTUnwrap(slots.first { $0.accountUuid == accB })
+        // Account A MUST remain on Primary Profile; Account B MUST belong to Profile 2
+        XCTAssertTrue(slotA.isDefaultProfile)
+        XCTAssertFalse(slotA.isActiveAccount)
+        XCTAssertFalse(slotB.isDefaultProfile)
+        XCTAssertTrue(slotB.isActiveAccount)
+        XCTAssertNotEqual(slotA.profileDataDir.standardizedFileURL, slotB.profileDataDir.standardizedFileURL)
+    }
+
     // MARK: - Helper
 
     private func writeSessionJSON(

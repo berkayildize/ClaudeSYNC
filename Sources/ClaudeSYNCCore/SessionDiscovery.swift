@@ -40,10 +40,13 @@ public final class SessionDiscovery: @unchecked Sendable {
         let fm = FileManager.default
         let transcriptIndex = buildTranscriptIndex(fm: fm)
 
-        // Merge plan-usage-history.json across ALL profiles so every org gets its freshest reading + full timeline
+        // Read per-profile plan-usage-history.json AND merge across all profiles so every org gets its freshest reading + full timeline
+        var perProfileUsageByPath: [String: [String: OrgUsage]] = [:]
         var mergedUsageByOrg: [String: OrgUsage] = [:]
         for profile in profiles {
+            let stdPath = profile.expandedURL.standardizedFileURL.path
             let perProfile = readUsageHistory(in: profile.expandedURL.standardizedFileURL)
+            perProfileUsageByPath[stdPath] = perProfile
             for (org, usage) in perProfile {
                 if let existing = mergedUsageByOrg[org] {
                     let combinedHistory = mergeHistory(existing.history, usage.history)
@@ -74,6 +77,15 @@ public final class SessionDiscovery: @unchecked Sendable {
             let runningInstance = processSnapshot.runningInstances.first {
                 $0.dataDir == profileDir.path || (profile.isDefault && $0.isDefaultProfile)
             }
+
+            // Local non-secret ownership signals written directly by Claude Desktop inside THIS profile
+            let localAgentRoot = profileDir.appendingPathComponent("local-agent-mode-sessions", isDirectory: true)
+            let localAgentAccountUuids = Set(
+                subdirectories(at: localAgentRoot, fm: fm)
+                    .map { $0.lastPathComponent.lowercased() }
+                    .filter { isLikelyUUID($0) }
+            )
+            let ownProfileUsage = perProfileUsageByPath[profileDir.path] ?? [:]
 
             let accountDirs = subdirectories(at: sessionsRoot, fm: fm)
                 .filter { isLikelyUUID($0.lastPathComponent) }
@@ -185,6 +197,32 @@ public final class SessionDiscovery: @unchecked Sendable {
                 }
             }
 
+            // For an isolated secondary profile (!isDefault), keep ONLY the real logged-in owner account
+            // if stray pre-copied/migrated folders exist alongside it.
+            if !profile.isDefault && profileSlots.count > 1 {
+                let bestOwner = profileSlots.max { lhs, rhs in
+                    func ownerScore(_ slot: AccountSlot) -> (Int, TimeInterval, TimeInterval) {
+                        var score = 0
+                        if processSnapshot.activeAccountOrgPairs.contains(slot.accountOrgKey.lowercased()) {
+                            score += 4000
+                        }
+                        if localAgentAccountUuids.contains(slot.accountUuid.lowercased()) {
+                            score += 2000
+                        }
+                        let ownUsageDate = ownProfileUsage[slot.orgUuid]?.updatedAt.timeIntervalSince1970 ?? 0
+                        if ownUsageDate > 0 {
+                            score += 1000
+                        }
+                        let latestCard = slot.sessions.first?.effectiveTimestamp.timeIntervalSince1970 ?? 0
+                        return (score, ownUsageDate, latestCard)
+                    }
+                    return ownerScore(lhs) < ownerScore(rhs)
+                }
+                if let bestOwner {
+                    profileSlots = [bestOwner]
+                }
+            }
+
             // Within a single profile, mark active account accurately:
             // If any Claude Desktop instance is running on the system, ONLY running profile(s) can be active.
             let anyInstanceRunning = !processSnapshot.runningInstances.isEmpty
@@ -201,10 +239,14 @@ public final class SessionDiscovery: @unchecked Sendable {
                     } else {
                         let pool = agentActiveIndices.isEmpty ? Array(profileSlots.indices) : agentActiveIndices
                         chosenIdx = pool.max(by: { lhs, rhs in
-                            let lUsageDate = profileSlots[lhs].usage?.updatedAt ?? .distantPast
-                            let rUsageDate = profileSlots[rhs].usage?.updatedAt ?? .distantPast
-                            if abs(lUsageDate.timeIntervalSince(rUsageDate)) > 5 {
-                                return lUsageDate < rUsageDate
+                            let lOwnDate = ownProfileUsage[profileSlots[lhs].orgUuid]?.updatedAt
+                                ?? profileSlots[lhs].usage?.updatedAt
+                                ?? .distantPast
+                            let rOwnDate = ownProfileUsage[profileSlots[rhs].orgUuid]?.updatedAt
+                                ?? profileSlots[rhs].usage?.updatedAt
+                                ?? .distantPast
+                            if abs(lOwnDate.timeIntervalSince(rOwnDate)) > 5 {
+                                return lOwnDate < rOwnDate
                             }
                             let lSessDate = profileSlots[lhs].sessions.first?.effectiveTimestamp ?? .distantPast
                             let rSessDate = profileSlots[rhs].sessions.first?.effectiveTimestamp ?? .distantPast
@@ -220,14 +262,21 @@ public final class SessionDiscovery: @unchecked Sendable {
             result.append(contentsOf: profileSlots)
         }
 
-        // Deduplicate: if an accountOrgKey has a dedicated secondary profile, hide stale inactive copy from default profile
+        // Deduplicate: if an accountOrgKey has a dedicated secondary profile, hide stale copy from default profile
+        // ONLY when default profile still retains at least one other account (never wipe out default profile completely!).
         let dedicatedSecondaryKeys = Set(result.filter { !$0.isDefaultProfile }.map(\.accountOrgKey))
         if !dedicatedSecondaryKeys.isEmpty {
-            result = result.filter { slot in
-                if slot.isDefaultProfile && dedicatedSecondaryKeys.contains(slot.accountOrgKey) && !slot.isActiveAccount {
-                    return false
+            let defaultSlots = result.filter(\.isDefaultProfile)
+            let survivingDefaultSlots = defaultSlots.filter {
+                !dedicatedSecondaryKeys.contains($0.accountOrgKey) || $0.isActiveAccount
+            }
+            if !survivingDefaultSlots.isEmpty {
+                result = result.filter { slot in
+                    if slot.isDefaultProfile && dedicatedSecondaryKeys.contains(slot.accountOrgKey) && !slot.isActiveAccount {
+                        return false
+                    }
+                    return true
                 }
-                return true
             }
         }
 

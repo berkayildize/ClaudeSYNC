@@ -5,6 +5,21 @@ Each release is packaged as a standalone macOS `.dmg` under [GitHub Releases](ht
 
 ---
 
+## [v0.0.4] — 2026-11-20
+
+### Critical Bug Fix: True Profile Ownership Detection & Reliable Two-Way Switching
+
+#### Fixed
+- **Fixed infinite same-profile relaunch bug:** Previously, pre-copying a guessed account's session folder into `Claude-Account2` before sign-in could leave two account folders inside Profile 2, causing deduplication to hide Profile 1 entirely and trapping the primary button in *"Enable Dual Profile"* mode.
+- **Accurate per-profile owner detection (`SessionDiscovery`):** Secondary profiles now identify their true logged-in account using Claude Desktop's own per-profile `local-agent-mode-sessions/<accountUuid>` and per-profile `plan-usage-history.json`, ignoring any stray/orphan folders and never wiping out Primary Profile slots.
+- **Explicit target naming on the switch button:** The primary button now names the exact account you are switching to (e.g., `Switch to Ultra 1` / `Ana Profil Hesabına Geç`) and cleanly alternates back and forth between Profile 1 and Profile 2 without ever getting stuck on one profile.
+- **Stopped premature session pre-migration:** Quick setup and profile creation now default to copying only local MCP config (`claude_desktop_config.json`) before first sign-in so Profile 2 stays clean.
+
+#### Testing
+- Added regression unit test (`14/14` passing) covering secondary profiles containing an orphan pre-copied folder alongside the true logged-in account in Single-Window Mode.
+
+---
+
 ## [v0.0.3] — 2026-11-20
 
 ### Single-Window Autonomous Switching & Native Google/Gmail OAuth

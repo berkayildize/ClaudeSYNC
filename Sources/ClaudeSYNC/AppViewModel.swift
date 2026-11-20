@@ -479,8 +479,27 @@ final class AppViewModel: ObservableObject {
         if sourceAccountId == nil || !ids.contains(sourceAccountId!) {
             sourceAccountId = (accounts.first(where: { $0.isActiveAccount }) ?? accounts.first)?.id
         }
-        if targetAccountId == nil || !ids.contains(targetAccountId!) || targetAccountId == sourceAccountId {
-            targetAccountId = accounts.first(where: { $0.id != sourceAccountId })?.id
+        let srcDir = accounts.first(where: { $0.id == sourceAccountId })?.profileDataDir.standardizedFileURL
+        let currentTargetValid: Bool = {
+            guard let tid = targetAccountId, tid != sourceAccountId,
+                  let tgt = accounts.first(where: { $0.id == tid }) else { return false }
+            // Prefer a target in a DIFFERENT profile if one exists
+            if let srcDir, tgt.profileDataDir.standardizedFileURL == srcDir {
+                let hasCrossProfileCandidate = accounts.contains {
+                    $0.id != sourceAccountId && $0.profileDataDir.standardizedFileURL != srcDir
+                }
+                if hasCrossProfileCandidate { return false }
+            }
+            return true
+        }()
+        if !currentTargetValid {
+            if let srcDir, let cross = accounts.first(where: {
+                $0.id != sourceAccountId && $0.profileDataDir.standardizedFileURL != srcDir
+            }) {
+                targetAccountId = cross.id
+            } else {
+                targetAccountId = accounts.first(where: { $0.id != sourceAccountId })?.id
+            }
         }
     }
 
@@ -928,12 +947,13 @@ final class AppViewModel: ObservableObject {
 
     func enableZeroLogoutDualProfileQuick() {
         let suggested = ProfileConfig.suggestedSecondaryProfile
-        let accountToMigrate = targetAccount ?? accounts.last
+        // Never pre-copy a guessed account folder before user signs into Profile 2 —
+        // once signed in, Sync / Switch transfers sessions into the true logged-in account cleanly.
         setupAndLaunchSecondaryProfile(
-            name: suggested.name,
+            name: l10n.t("2. Profil", "Profile 2"),
             path: suggested.dataDirPath,
             copyMcpConfig: true,
-            migrateAccount: accountToMigrate
+            migrateAccount: nil
         )
     }
 
@@ -1036,6 +1056,17 @@ final class AppViewModel: ObservableObject {
                         targetIsDefault: profile.isDefault
                     )
                     self.isBusy = false
+                    if let switchedAcc = self.accounts.first(where: {
+                        $0.profileDataDir.standardizedFileURL.path == dir.path
+                    }) {
+                        let prevSource = self.sourceAccountId
+                        self.sourceAccountId = switchedAcc.id
+                        if prevSource != switchedAcc.id {
+                            self.targetAccountId = prevSource
+                        }
+                        self.recomputeRelationCaches()
+                        self.persistSelection()
+                    }
                     self.statusBanner = StatusBanner(
                         kind: .success,
                         title: self.l10n.t("Tek pencerede \(displayName) açıldı", "Switched to \(displayName)"),
