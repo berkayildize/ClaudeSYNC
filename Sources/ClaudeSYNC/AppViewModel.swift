@@ -5,20 +5,37 @@ import Foundation
 import SwiftUI
 
 enum SessionFilter: String, CaseIterable, Identifiable {
-    case all = "Tümü"
-    case needsSync = "Aktarılacak"
-    case live = "Canlı"
-    case archived = "Arşiv"
+    case all = "all"
+    case needsSync = "needsSync"
+    case live = "live"
+    case archived = "archived"
 
     var id: String { rawValue }
+
+    func shortTitle(_ l10n: L10n) -> String {
+        switch self {
+        case .all: return l10n.t("Tümü", "All")
+        case .needsSync: return l10n.t("Yeni", "Unsynced")
+        case .live: return l10n.t("Canlı", "Live")
+        case .archived: return l10n.t("Arşiv", "Archive")
+        }
+    }
 }
 
 enum PopoverTab: String, CaseIterable, Identifiable {
-    case sessions = "Oturumlar"
-    case limits = "Limitler"
-    case settings = "Ayarlar"
+    case sessions = "sessions"
+    case limits = "limits"
+    case settings = "settings"
 
     var id: String { rawValue }
+
+    func title(_ l10n: L10n) -> String {
+        switch self {
+        case .sessions: return l10n.t("Oturumlar", "Sessions")
+        case .limits: return l10n.t("Limitler", "Limits")
+        case .settings: return l10n.t("Ayarlar", "Settings")
+        }
+    }
 
     var icon: String {
         switch self {
@@ -30,12 +47,21 @@ enum PopoverTab: String, CaseIterable, Identifiable {
 }
 
 enum MainAppSection: String, CaseIterable, Identifiable {
-    case sessions = "Oturumlar"
-    case limits = "Limitler"
-    case profiles = "Profiller"
-    case settings = "Ayarlar"
+    case sessions = "sessions"
+    case limits = "limits"
+    case profiles = "profiles"
+    case settings = "settings"
 
     var id: String { rawValue }
+
+    func title(_ l10n: L10n) -> String {
+        switch self {
+        case .sessions: return l10n.t("Oturumlar", "Sessions")
+        case .limits: return l10n.t("Limitler", "Limits")
+        case .profiles: return l10n.t("Profiller", "Profiles")
+        case .settings: return l10n.t("Ayarlar", "Settings")
+        }
+    }
 
     var icon: String {
         switch self {
@@ -45,6 +71,14 @@ enum MainAppSection: String, CaseIterable, Identifiable {
         case .settings: return "gearshape.fill"
         }
     }
+}
+
+struct SetupDiagnostics: Equatable {
+    var claudeAppInstalled: Bool = false
+    var claudeDataDirAccessible: Bool = false
+    var claudeProjectsAccessible: Bool = false
+    var notificationStatus: NotificationPermissionState = .notDetermined
+    var detectedAccountCount: Int = 0
 }
 
 struct StatusBanner: Equatable {
@@ -95,6 +129,9 @@ final class AppViewModel: ObservableObject {
     @Published var statusBanner: StatusBanner?
     @Published var launchAtLogin: Bool = false
     @Published var showMenuBarExtra: Bool = true
+    @Published var onboardingStep: OnboardingStep = .welcome
+    @Published var isShowingOnboarding: Bool = false
+    @Published var setupDiagnostics: SetupDiagnostics = SetupDiagnostics()
     @Published var recentlyTransferredIds: Set<String> = []
     @Published var autoSwitchHistory: [AutoSwitchLogEntry] = []
     @Published private(set) var relationsBySessionId: [String: SyncRelation] = [:]
@@ -104,6 +141,7 @@ final class AppViewModel: ObservableObject {
     @Published private(set) var appearanceTick: Int = 0
 
     var openMainWindowAction: (() -> Void)?
+    var languageChangedAction: (() -> Void)?
 
     private let preferencesStore: PreferencesStore
     private let discovery: SessionDiscovery
@@ -136,9 +174,9 @@ final class AppViewModel: ObservableObject {
         self.sourceAccountId = loaded.selectedSourceAccountId
         self.targetAccountId = loaded.selectedTargetAccountId
         self.showMenuBarExtra = loaded.showMenuBarExtra
+        self.isShowingOnboarding = !loaded.hasCompletedOnboarding
         self.launchAtLogin = launchAgent.isEnabled
 
-        NotificationHelper.shared.requestPermissionIfNeeded()
         themeObserver = DistributedNotificationCenter.default().addObserver(
             forName: Notification.Name("AppleInterfaceThemeChangedNotification"),
             object: nil,
@@ -150,7 +188,13 @@ final class AppViewModel: ObservableObject {
         }
         self.isDemoMode = CommandLine.arguments.contains("--demo-snapshot")
         if !self.isDemoMode {
+            // Only silently request notification permission if onboarding is already done;
+            // otherwise let the user grant it intentionally in Onboarding Step 2.
+            if loaded.hasCompletedOnboarding {
+                NotificationHelper.shared.requestPermissionIfNeeded()
+            }
             refresh()
+            refreshSetupDiagnostics()
             startAutoRefresh()
         }
     }
@@ -163,6 +207,71 @@ final class AppViewModel: ObservableObject {
     }
 
     // MARK: - Computed Properties
+
+    var isTurkish: Bool {
+        settings.language.resolvedIsTurkish
+    }
+
+    var l10n: L10n {
+        L10n(isTurkish: isTurkish)
+    }
+
+    var shouldShowOnboarding: Bool {
+        isShowingOnboarding
+    }
+
+    func setLanguage(_ lang: AppLanguage) {
+        settings.language = lang
+        if !isDemoMode {
+            preferencesStore.save(settings)
+        }
+        appearanceTick &+= 1
+        languageChangedAction?()
+    }
+
+    func completeOnboarding() {
+        settings.hasCompletedOnboarding = true
+        isShowingOnboarding = false
+        if !isDemoMode {
+            preferencesStore.save(settings)
+        }
+    }
+
+    func reopenOnboarding() {
+        onboardingStep = .welcome
+        isShowingOnboarding = true
+        refreshSetupDiagnostics()
+    }
+
+    func refreshSetupDiagnostics() {
+        guard !isDemoMode else { return }
+        let fm = FileManager.default
+        let claudeAppExists = fm.fileExists(atPath: "/Applications/Claude.app")
+        let defaultDir = ProfileConfig.defaultProfile.expandedURL.path
+        let dataDirReadable = fm.isReadableFile(atPath: defaultDir)
+        let projectsDir = fm.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects").path
+        let projectsReadable = fm.isReadableFile(atPath: projectsDir)
+        let detectedCount = accounts.count
+
+        Task { @MainActor [weak self] in
+            let notifState = await NotificationHelper.shared.authorizationState()
+            guard let self else { return }
+            self.setupDiagnostics = SetupDiagnostics(
+                claudeAppInstalled: claudeAppExists,
+                claudeDataDirAccessible: dataDirReadable,
+                claudeProjectsAccessible: projectsReadable,
+                notificationStatus: notifState,
+                detectedAccountCount: max(detectedCount, self.accounts.count)
+            )
+        }
+    }
+
+    func requestNotificationsFromSetup() {
+        Task { @MainActor [weak self] in
+            let status = await NotificationHelper.shared.requestPermissionExplicitly()
+            self?.setupDiagnostics.notificationStatus = status
+        }
+    }
 
     var sourceAccount: AccountSlot? {
         if let id = sourceAccountId, let match = accounts.first(where: { $0.id == id }) {
@@ -202,7 +311,8 @@ final class AppViewModel: ObservableObject {
             mode: settings.menuBarDisplayMode,
             accounts: accounts,
             activeAccount: activeAccount,
-            isSwitching: isSwitchingNow
+            isSwitching: isSwitchingNow,
+            isTurkish: isTurkish
         )
     }
 
@@ -442,12 +552,25 @@ final class AppViewModel: ObservableObject {
             )
             self.autoSwitchHistory.insert(entry, at: 0)
 
+            let tr = self.l10n
             let title = switchedWindow
-                ? "Otomatik Geçiş Tamamlandı → \(decision.target.displayName)"
-                : "Limit Doldu · \(transferred) Oturum \(decision.target.displayName) Hesabına Aktarıldı"
+                ? tr.t(
+                    "Otomatik Geçiş Tamamlandı → \(decision.target.displayName)",
+                    "Auto-Failover Complete → \(decision.target.displayName)"
+                )
+                : tr.t(
+                    "Limit Doldu · \(transferred) Oturum \(decision.target.displayName) Hesabına Aktarıldı",
+                    "Rate Limit Hit · \(transferred) Session(s) Transferred to \(decision.target.displayName)"
+                )
             let detail = switchedWindow
-                ? "\(decision.reason). \(transferred) oturum taşındı ve \(decision.target.displayName) penceresi açıldı."
-                : "\(decision.reason). Çıkışsız pencere geçişi için 2. profili etkinleştirebilirsiniz."
+                ? tr.t(
+                    "\(decision.reason). \(transferred) oturum taşındı ve \(decision.target.displayName) penceresi açıldı.",
+                    "\(decision.reason). Transferred \(transferred) session(s) and switched to \(decision.target.displayName)."
+                )
+                : tr.t(
+                    "\(decision.reason). Çıkışsız pencere geçişi için 2. profili etkinleştirebilirsiniz.",
+                    "\(decision.reason). Enable Profile 2 for automatic zero-logout window switching."
+                )
 
             self.statusBanner = StatusBanner(
                 kind: .success,
@@ -508,25 +631,34 @@ final class AppViewModel: ObservableObject {
                     self.targetAccountId = src.id
                     self.recomputeRelationCaches()
                     self.persistSelection()
+                    let tr = self.l10n
                     self.statusBanner = StatusBanner(
                         kind: .success,
-                        title: "\(dst.displayName) hesabına geçiş yapıldı",
-                        detail: "\(movedIds.count) aktif oturum en üste taşındı — çıkış yapmadan devam edebilirsiniz.",
+                        title: tr.t("\(dst.displayName) hesabına geçiş yapıldı", "Switched to \(dst.displayName)"),
+                        detail: tr.t(
+                            "\(movedIds.count) aktif oturum en üste taşındı — çıkış yapmadan devam edebilirsiniz.",
+                            "\(movedIds.count) active session(s) pinned to top — continue without logging out."
+                        ),
                         quickAction: nil
                     )
                 } catch {
+                    let tr = self.l10n
                     self.statusBanner = StatusBanner(
                         kind: .warning,
-                        title: "\(movedIds.count) oturum aktarıldı, pencere açılamadı",
+                        title: tr.t("\(movedIds.count) oturum aktarıldı, pencere açılamadı", "\(movedIds.count) session(s) synced, couldn't open window"),
                         detail: error.localizedDescription,
-                        quickAction: .launchOrReloadTargetProfile(accountId: dst.id, label: "Tekrar Dene")
+                        quickAction: .launchOrReloadTargetProfile(accountId: dst.id, label: tr.t("Tekrar Dene", "Retry"))
                     )
                 }
             } else {
+                let tr = self.l10n
                 self.statusBanner = StatusBanner(
                     kind: .success,
-                    title: "\(movedIds.count) oturum \(dst.displayName) hesabına aktarıldı",
-                    detail: "Çıkış/giriş yapmadan tek tıkla geçiş için Çift Profil modunu etkinleştirin.",
+                    title: tr.t("\(movedIds.count) oturum \(dst.displayName) hesabına aktarıldı", "\(movedIds.count) session(s) transferred to \(dst.displayName)"),
+                    detail: tr.t(
+                        "Çıkış/giriş yapmadan tek tıkla geçiş için Çift Profil modunu etkinleştirin.",
+                        "Enable Dual Profile mode for instant zero-logout switching."
+                    ),
                     quickAction: .setupDualProfile
                 )
             }
@@ -596,11 +728,15 @@ final class AppViewModel: ObservableObject {
     // MARK: - Single Session & Batch Transfer
 
     func transferSession(_ session: ClaudeSessionCard, switchToTargetAfter: Bool = false) {
+        let tr = l10n
         guard let src = sourceAccount, let dst = targetAccount else {
             statusBanner = StatusBanner(
                 kind: .warning,
-                title: "Hedef hesap bulunamadı",
-                detail: "Aktarım için en az 2 farklı hesap veya profil algılanmalıdır.",
+                title: tr.t("Hedef hesap bulunamadı", "Target account not found"),
+                detail: tr.t(
+                    "Aktarım için en az 2 farklı hesap veya profil algılanmalıdır.",
+                    "At least 2 accounts or profiles are required to transfer sessions."
+                ),
                 quickAction: nil
             )
             return
@@ -615,6 +751,7 @@ final class AppViewModel: ObservableObject {
                 let res = try engine.transferSession(session, from: src, to: dst, options: opts)
                 await MainActor.run { [weak self] in
                     guard let self else { return }
+                    let tr = self.l10n
                     self.isBusy = false
                     self.markRecentlyTransferred(session.sessionId)
                     self.refresh()
@@ -624,12 +761,19 @@ final class AppViewModel: ObservableObject {
                         detailParts.append(res.notes.joined(separator: " · "))
                     }
                     if session.isLiveRunning {
-                        detailParts.append("Not: Bu oturum şu an açık — üretim bittikten sonra diğer hesapta devam edin.")
+                        detailParts.append(
+                            tr.t(
+                                "Not: Bu oturum şu an açık — üretim bittikten sonra diğer hesapta devam edin.",
+                                "Note: This session is currently active — wait for generation to finish before resuming in the other account."
+                            )
+                        )
                     }
 
                     let quickAction: StatusBanner.QuickAction
                     if res.wasCrossProfile {
-                        let label = dst.runningPid != nil ? "\(dst.displayName) Profilini Yenile" : "\(dst.displayName) Profilini Aç"
+                        let label = dst.runningPid != nil
+                            ? tr.t("\(dst.displayName) Profilini Yenile", "Reload \(dst.displayName)")
+                            : tr.t("\(dst.displayName) Profilini Aç", "Open \(dst.displayName)")
                         quickAction = .launchOrReloadTargetProfile(accountId: dst.id, label: label)
                     } else {
                         quickAction = .reloadDefaultClaude
@@ -637,7 +781,7 @@ final class AppViewModel: ObservableObject {
 
                     self.statusBanner = StatusBanner(
                         kind: .success,
-                        title: "\"\(res.title)\" aktarıldı",
+                        title: tr.t("\"\(res.title)\" aktarıldı", "Transferred \"\(res.title)\""),
                         detail: detailParts.joined(separator: "\n"),
                         quickAction: quickAction
                     )
@@ -648,10 +792,11 @@ final class AppViewModel: ObservableObject {
                 }
             } catch {
                 await MainActor.run { [weak self] in
-                    self?.isBusy = false
-                    self?.statusBanner = StatusBanner(
+                    guard let self else { return }
+                    self.isBusy = false
+                    self.statusBanner = StatusBanner(
                         kind: .error,
-                        title: "Aktarım başarısız",
+                        title: self.l10n.t("Aktarım başarısız", "Transfer failed"),
                         detail: error.localizedDescription,
                         quickAction: nil
                     )
@@ -684,42 +829,59 @@ final class AppViewModel: ObservableObject {
                 )
                 await MainActor.run { [weak self] in
                     guard let self else { return }
+                    let tr = self.l10n
                     self.isBusy = false
                     self.refresh()
 
                     if !summary.errors.isEmpty {
                         self.statusBanner = StatusBanner(
                             kind: .warning,
-                            title: "Eşitleme kısmen tamamlandı (\(summary.totalChanged) güncellendi)",
+                            title: tr.t(
+                                "Eşitleme kısmen tamamlandı (\(summary.totalChanged) güncellendi)",
+                                "Sync partially completed (\(summary.totalChanged) updated)"
+                            ),
                             detail: summary.errors.prefix(2).joined(separator: "\n"),
                             quickAction: summary.backupDir.map { .openBackups($0) }
                         )
                     } else if summary.totalChanged == 0 {
                         self.statusBanner = StatusBanner(
                             kind: .info,
-                            title: "Tüm aktif oturumlar zaten güncel",
-                            detail: "\(summary.skippedUpToDate) oturum iki hesapta da eşit durumda.",
+                            title: tr.t("Tüm aktif oturumlar zaten güncel", "All active sessions are already in sync"),
+                            detail: tr.t(
+                                "\(summary.skippedUpToDate) oturum iki hesapta da eşit durumda.",
+                                "\(summary.skippedUpToDate) session(s) already up to date across both accounts."
+                            ),
                             quickAction: nil
                         )
                     } else {
                         let crossProfile = src.profileDataDir.standardizedFileURL != dst.profileDataDir.standardizedFileURL
                         let action: StatusBanner.QuickAction = crossProfile
-                            ? .launchOrReloadTargetProfile(accountId: dst.id, label: "\(dst.displayName) Profilini Yenile")
+                            ? .launchOrReloadTargetProfile(
+                                accountId: dst.id,
+                                label: tr.t("\(dst.displayName) Profilini Yenile", "Reload \(dst.displayName)")
+                            )
                             : .reloadDefaultClaude
                         self.statusBanner = StatusBanner(
                             kind: .success,
-                            title: "Eşitleme tamamlandı: \(summary.copiedCount) yeni, \(summary.updatedCount) güncellendi",
-                            detail: "\(summary.skippedUpToDate) oturum zaten günceldi.",
+                            title: tr.t(
+                                "Eşitleme tamamlandı: \(summary.copiedCount) yeni, \(summary.updatedCount) güncellendi",
+                                "Sync complete: \(summary.copiedCount) copied, \(summary.updatedCount) updated"
+                            ),
+                            detail: tr.t(
+                                "\(summary.skippedUpToDate) oturum zaten günceldi.",
+                                "\(summary.skippedUpToDate) session(s) were already up to date."
+                            ),
                             quickAction: action
                         )
                     }
                 }
             } catch {
                 await MainActor.run { [weak self] in
-                    self?.isBusy = false
-                    self?.statusBanner = StatusBanner(
+                    guard let self else { return }
+                    self.isBusy = false
+                    self.statusBanner = StatusBanner(
                         kind: .error,
-                        title: "Toplu eşitleme hatası",
+                        title: self.l10n.t("Toplu eşitleme hatası", "Batch sync failed"),
                         detail: error.localizedDescription,
                         quickAction: nil
                     )
@@ -766,8 +928,8 @@ final class AppViewModel: ObservableObject {
                 self.isBusy = false
                 self.statusBanner = StatusBanner(
                     kind: .success,
-                    title: "Claude Desktop yeniden başlatıldı",
-                    detail: "Kenar çubuğu aktarılan oturumlarla yenilendi.",
+                    title: self.l10n.t("Claude Desktop yeniden başlatıldı", "Claude Desktop restarted"),
+                    detail: self.l10n.t("Kenar çubuğu aktarılan oturumlarla yenilendi.", "Sidebar refreshed with synced sessions."),
                     quickAction: nil
                 )
                 self.refresh()
@@ -775,7 +937,7 @@ final class AppViewModel: ObservableObject {
                 self.isBusy = false
                 self.statusBanner = StatusBanner(
                     kind: .error,
-                    title: "Yenileme tamamlanamadı",
+                    title: self.l10n.t("Yenileme tamamlanamadı", "Restart failed"),
                     detail: error.localizedDescription,
                     quickAction: nil
                 )
@@ -802,8 +964,8 @@ final class AppViewModel: ObservableObject {
                 self.isBusy = false
                 self.statusBanner = StatusBanner(
                     kind: .success,
-                    title: "\(account.displayName) açıldı",
-                    detail: "Aktarılan oturum kenar çubuğunun en üstünde hazır.",
+                    title: self.l10n.t("\(account.displayName) açıldı", "Opened \(account.displayName)"),
+                    detail: self.l10n.t("Aktarılan oturum kenar çubuğunun en üstünde hazır.", "Synced session is pinned at the top of the sidebar."),
                     quickAction: nil
                 )
                 self.refresh()
@@ -811,7 +973,7 @@ final class AppViewModel: ObservableObject {
                 self.isBusy = false
                 self.statusBanner = StatusBanner(
                     kind: .error,
-                    title: "Profil başlatılamadı",
+                    title: self.l10n.t("Profil başlatılamadı", "Could not launch profile"),
                     detail: error.localizedDescription,
                     quickAction: nil
                 )
@@ -828,17 +990,18 @@ final class AppViewModel: ObservableObject {
         } else {
             do {
                 try processMonitor.launchProfile(dataDir: dir, isDefault: profile.isDefault)
+                let displayName = l10n.profileDisplayName(profile.name, isDefault: profile.isDefault)
                 statusBanner = StatusBanner(
                     kind: .info,
-                    title: "\(profile.name) başlatılıyor",
-                    detail: "Açılan pencerede hesabınız sürekli giriş yapılı kalır.",
+                    title: l10n.t("\(displayName) başlatılıyor", "Launching \(displayName)"),
+                    detail: l10n.t("Açılan pencerede hesabınız sürekli giriş yapılı kalır.", "Your account stays permanently logged in inside this window."),
                     quickAction: nil
                 )
                 refresh()
             } catch {
                 statusBanner = StatusBanner(
                     kind: .error,
-                    title: "Profil başlatılamadı",
+                    title: l10n.t("Profil başlatılamadı", "Could not launch profile"),
                     detail: error.localizedDescription,
                     quickAction: nil
                 )
@@ -858,10 +1021,11 @@ final class AppViewModel: ObservableObject {
             do {
                 try await mon.gracefulRestart(pid: runningPid, dataDir: dir, isDefault: profile.isDefault)
                 self.isBusy = false
+                let displayName = self.l10n.profileDisplayName(profile.name, isDefault: profile.isDefault)
                 self.statusBanner = StatusBanner(
                     kind: .success,
-                    title: "\(profile.name) yeniden başlatıldı",
-                    detail: "Kenar çubuğu güncel oturumlarla yenilendi.",
+                    title: self.l10n.t("\(displayName) yeniden başlatıldı", "Restarted \(displayName)"),
+                    detail: self.l10n.t("Kenar çubuğu güncel oturumlarla yenilendi.", "Sidebar refreshed with latest sessions."),
                     quickAction: nil
                 )
                 self.refresh()
@@ -869,7 +1033,7 @@ final class AppViewModel: ObservableObject {
                 self.isBusy = false
                 self.statusBanner = StatusBanner(
                     kind: .error,
-                    title: "Profil yenilenemedi",
+                    title: self.l10n.t("Profil yenilenemedi", "Could not restart profile"),
                     detail: error.localizedDescription,
                     quickAction: nil
                 )
@@ -896,7 +1060,7 @@ final class AppViewModel: ObservableObject {
 
         let profile = ProfileConfig(
             id: "profile-\(UUID().uuidString.prefix(8))",
-            name: trimmedName.isEmpty ? "2. Profil" : trimmedName,
+            name: trimmedName.isEmpty ? l10n.t("2. Profil", "Profile 2") : trimmedName,
             dataDirPath: trimmedPath,
             isDefault: false
         )
@@ -918,21 +1082,28 @@ final class AppViewModel: ObservableObject {
             try processMonitor.launchProfile(dataDir: profile.expandedURL, isDefault: false)
 
             var extras: [String] = []
-            if copiedMcp { extras.append("yerel MCP ayarları") }
-            if let migrated = migrateAccount { extras.append("\(migrated.activeSessions.count) mevcut oturum") }
-            let extraNote = extras.isEmpty ? "" : " (\(extras.joined(separator: " + ")) aktarıldı)"
+            if copiedMcp { extras.append(l10n.t("yerel MCP ayarları", "local MCP config")) }
+            if let migrated = migrateAccount {
+                extras.append(l10n.t("\(migrated.activeSessions.count) mevcut oturum", "\(migrated.activeSessions.count) existing sessions"))
+            }
+            let extraNote = extras.isEmpty
+                ? ""
+                : l10n.t(" (\(extras.joined(separator: " + ")) aktarıldı)", " (copied \(extras.joined(separator: " + ")))")
 
             statusBanner = StatusBanner(
                 kind: .success,
-                title: "Çıkışsız 2. Profil Başlatıldı",
-                detail: "Açılan pencerede 2. Ultra hesabınızla 1 kez giriş yapın; bundan sonra çıkış yapmadan otomatik geçiş çalışır.\(extraNote)",
+                title: l10n.t("Çıkışsız 2. Profil Başlatıldı", "Isolated Profile 2 Launched"),
+                detail: l10n.t(
+                    "Açılan pencerede 2. Ultra hesabınızla 1 kez giriş yapın; bundan sonra çıkış yapmadan otomatik geçiş çalışır.\(extraNote)",
+                    "Sign in once with your second Claude account in the launched window; future switches require zero logout.\(extraNote)"
+                ),
                 quickAction: nil
             )
             refresh()
         } catch {
             statusBanner = StatusBanner(
                 kind: .error,
-                title: "2. profil oluşturulamadı",
+                title: l10n.t("2. profil oluşturulamadı", "Could not create Profile 2"),
                 detail: error.localizedDescription,
                 quickAction: nil
             )
@@ -953,7 +1124,7 @@ final class AppViewModel: ObservableObject {
         NSPasteboard.general.setString(cmd, forType: .string)
         statusBanner = StatusBanner(
             kind: .info,
-            title: "CLI devam komutu kopyalandı",
+            title: l10n.t("CLI devam komutu kopyalandı", "Copied CLI resume command"),
             detail: cmd,
             quickAction: nil
         )
@@ -981,7 +1152,7 @@ final class AppViewModel: ObservableObject {
             launchAtLogin = launchAgent.isEnabled
             statusBanner = StatusBanner(
                 kind: .error,
-                title: "Otomatik başlatma ayarlanamadı",
+                title: l10n.t("Otomatik başlatma ayarlanamadı", "Could not configure Launch at Login"),
                 detail: error.localizedDescription,
                 quickAction: nil
             )
@@ -990,8 +1161,20 @@ final class AppViewModel: ObservableObject {
 
     // MARK: - Synthetic Open-Source Demo Data (strictly for --demo-snapshot screenshots)
 
-    func loadSyntheticDemoData() {
+    func loadSyntheticDemoData(isTurkish demoTurkish: Bool = false) {
         isDemoMode = true
+        settings.language = demoTurkish ? .turkish : .english
+        settings.hasCompletedOnboarding = true
+        isShowingOnboarding = false
+        setupDiagnostics = SetupDiagnostics(
+            claudeAppInstalled: true,
+            claudeDataDirAccessible: true,
+            claudeProjectsAccessible: true,
+            notificationStatus: .authorized,
+            detectedAccountCount: 2
+        )
+        launchAtLogin = true
+
         let now = Date()
         let fakeDir1 = URL(fileURLWithPath: "/Users/demo/Library/Application Support/Claude", isDirectory: true)
         let fakeDir2 = URL(fileURLWithPath: "/Users/demo/Library/Application Support/Claude-Account2", isDirectory: true)
@@ -1062,7 +1245,7 @@ final class AppViewModel: ObservableObject {
 
         let slot1 = AccountSlot(
             profileId: "default",
-            profileName: "Ana Profil",
+            profileName: demoTurkish ? "Ana Profil" : "Primary Profile",
             profileDataDir: fakeDir1,
             isDefaultProfile: true,
             accountUuid: "a1b2c3d4-0000-4000-8000-000000000001",
@@ -1086,7 +1269,7 @@ final class AppViewModel: ObservableObject {
 
         let slot2 = AccountSlot(
             profileId: "secondary-account-2",
-            profileName: "2. Profil",
+            profileName: demoTurkish ? "2. Profil" : "Profile 2",
             profileDataDir: fakeDir2,
             isDefaultProfile: false,
             accountUuid: "e5f6a7b8-0000-4000-8000-000000000002",
@@ -1115,7 +1298,12 @@ final class AppViewModel: ObservableObject {
         )
 
         settings.secondaryProfiles = [
-            ProfileConfig(id: "secondary-account-2", name: "2. Profil", dataDirPath: "~/Library/Application Support/Claude-Account2", isDefault: false)
+            ProfileConfig(
+                id: "secondary-account-2",
+                name: demoTurkish ? "2. Profil" : "Profile 2",
+                dataDirPath: "~/Library/Application Support/Claude-Account2",
+                isDefault: false
+            )
         ]
         settings.autoSwitchEnabled = true
         settings.autoSyncSharedCards = true

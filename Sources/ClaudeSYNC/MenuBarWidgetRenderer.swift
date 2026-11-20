@@ -24,6 +24,7 @@ final class MenuBarWidgetRenderer {
         accounts: [AccountSlot],
         activeAccount: AccountSlot?,
         isSwitching: Bool,
+        isTurkish: Bool = true,
         overrideDark: Bool? = nil
     ) -> NSImage {
         let isDark: Bool
@@ -56,8 +57,8 @@ final class MenuBarWidgetRenderer {
             let primary = activeAccount ?? accounts.first
             topPct = primary?.usage?.fiveHourPercent
             botPct = primary?.usage?.sevenDayPercent
-            topLbl = "5s"
-            botLbl = "7g"
+            topLbl = isTurkish ? "5s" : "5h"
+            botLbl = isTurkish ? "7g" : "7d"
         }
 
         let key = MenuBarRenderKey(

@@ -124,6 +124,7 @@ public struct RateLimitWatcher: Sendable {
         guard let usage = source.usage else { return nil }
 
         // Determine if source has triggered an automatic switch event
+        let isTr = settings.language.resolvedIsTurkish
         var triggerReason: String?
         var eventKey: String?
 
@@ -131,7 +132,10 @@ public struct RateLimitWatcher: Sendable {
         if let hit = usage.lastRateLimitHit,
            hit.isCurrentlyRejected,
            now.timeIntervalSince(hit.timestamp) <= 10 * 60 {
-            triggerReason = "\(source.displayName) \(hit.rateLimitTypeLabel.lowercased()) doldu (429)"
+            let label = hit.rateLimitTypeLabel(isTurkish: isTr)
+            triggerReason = isTr
+                ? "\(source.displayName) \(label.lowercased()) doldu (429)"
+                : "\(source.displayName) hit \(label.lowercased()) (429)"
             eventKey = "\(source.accountOrgKey)|429|\(hit.eventKey)"
         }
 
@@ -140,8 +144,14 @@ public struct RateLimitWatcher: Sendable {
             let threshold = (settings.autoSwitchTrigger == .at95Percent) ? 95 : 100
             let sampleIsFresh = now.timeIntervalSince(usage.updatedAt) <= 20 * 60
             if sampleIsFresh && usage.peakPercent >= threshold {
-                let windowLabel = (usage.fiveHourPercent ?? 0) >= threshold ? "5 saatlik" : "7 günlük"
-                triggerReason = "\(source.displayName) \(windowLabel) limiti %\(usage.peakPercent) seviyesine ulaştı"
+                let isFiveHour = (usage.fiveHourPercent ?? 0) >= threshold
+                if isTr {
+                    let windowLabel = isFiveHour ? "5 saatlik" : "7 günlük"
+                    triggerReason = "\(source.displayName) \(windowLabel) limiti %\(usage.peakPercent) seviyesine ulaştı"
+                } else {
+                    let windowLabel = isFiveHour ? "5-hour" : "7-day"
+                    triggerReason = "\(source.displayName) \(windowLabel) usage reached \(usage.peakPercent)%"
+                }
                 let bucket = Int(usage.updatedAt.timeIntervalSince1970 / 300) // 5-min dedup bucket
                 eventKey = "\(source.accountOrgKey)|pct\(threshold)|\(bucket)"
             }

@@ -1,5 +1,22 @@
 import Foundation
 
+public enum AppLanguage: String, Codable, CaseIterable, Identifiable, Sendable {
+    case system = "system"
+    case turkish = "tr"
+    case english = "en"
+
+    public var id: String { rawValue }
+
+    public var resolvedIsTurkish: Bool {
+        switch self {
+        case .turkish: return true
+        case .english: return false
+        case .system:
+            return Locale.preferredLanguages.first?.lowercased().hasPrefix("tr") == true
+        }
+    }
+}
+
 public struct ProfileConfig: Codable, Equatable, Hashable, Identifiable, Sendable {
     public let id: String
     public var name: String
@@ -15,6 +32,16 @@ public struct ProfileConfig: Codable, Equatable, Hashable, Identifiable, Sendabl
 
     public var expandedURL: URL {
         URL(fileURLWithPath: (dataDirPath as NSString).expandingTildeInPath, isDirectory: true)
+    }
+
+    public func localizedName(isTurkish: Bool) -> String {
+        if isDefault && (name == "Ana Profil" || name == "Primary Profile") {
+            return isTurkish ? "Ana Profil" : "Primary Profile"
+        }
+        if id == "secondary-account-2" && (name == "2. Profil" || name == "Profile 2") {
+            return isTurkish ? "2. Profil" : "Profile 2"
+        }
+        return name
     }
 
     public static var defaultProfile: ProfileConfig {
@@ -83,10 +110,14 @@ public struct RateLimitEvent: Equatable, Hashable, Identifiable, Sendable {
     }
 
     public var rateLimitTypeLabel: String {
+        rateLimitTypeLabel(isTurkish: true)
+    }
+
+    public func rateLimitTypeLabel(isTurkish: Bool) -> String {
         switch rateLimitType.lowercased() {
-        case "five_hour": return "5 Saatlik Limit"
-        case "seven_day": return "7 Günlük Limit"
-        default: return "Kullanım Limiti"
+        case "five_hour": return isTurkish ? "5 Saatlik Limit" : "5-Hour Limit"
+        case "seven_day": return isTurkish ? "7 Günlük Limit" : "7-Day Limit"
+        default: return isTurkish ? "Kullanım Limiti" : "Usage Limit"
         }
     }
 
@@ -153,18 +184,26 @@ public enum AutoSwitchTrigger: String, Codable, CaseIterable, Identifiable, Send
     public var id: String { rawValue }
 
     public var title: String {
+        title(isTurkish: true)
+    }
+
+    public func title(isTurkish: Bool) -> String {
         switch self {
-        case .onRateLimitError: return "429 Limit Hatasında"
-        case .at95Percent: return "%95 Dolunca"
-        case .at100Percent: return "%100 Dolunca"
+        case .onRateLimitError: return isTurkish ? "429 Limit Hatasında" : "On 429 Rate Limit"
+        case .at95Percent: return isTurkish ? "%95 Dolunca" : "At 95% Usage"
+        case .at100Percent: return isTurkish ? "%100 Dolunca" : "At 100% Usage"
         }
     }
 
     public var shortLabel: String {
+        shortLabel(isTurkish: true)
+    }
+
+    public func shortLabel(isTurkish: Bool) -> String {
         switch self {
         case .onRateLimitError: return "429"
-        case .at95Percent: return "%95"
-        case .at100Percent: return "%100"
+        case .at95Percent: return isTurkish ? "%95" : "95%"
+        case .at100Percent: return isTurkish ? "%100" : "100%"
         }
     }
 }
@@ -177,10 +216,14 @@ public enum MenuBarDisplayMode: String, Codable, CaseIterable, Identifiable, Sen
     public var id: String { rawValue }
 
     public var title: String {
+        title(isTurkish: true)
+    }
+
+    public func title(isTurkish: Bool) -> String {
         switch self {
-        case .iconAndBothAccounts: return "İki Hesap Bar"
-        case .iconAndActiveUsage: return "Aktif 5s/7g Bar"
-        case .iconOnly: return "Sadece İkon"
+        case .iconAndBothAccounts: return isTurkish ? "İki Hesap Bar" : "Dual Account Bars"
+        case .iconAndActiveUsage: return isTurkish ? "Aktif 5s/7g" : "Active 5h/7d"
+        case .iconOnly: return isTurkish ? "Sadece İkon" : "Icon Only"
         }
     }
 }
@@ -518,37 +561,60 @@ public struct ProcessSnapshot: Equatable, Sendable {
     public static let empty = ProcessSnapshot()
 }
 
-public enum TurkishDateFormatter {
-    public static func relativeString(from date: Date, now: Date = Date()) -> String {
+public enum LocalizedDateFormatter {
+    public static func relativeString(from date: Date, now: Date = Date(), isTurkish: Bool) -> String {
         let diff = Int(now.timeIntervalSince(date))
-        if diff < 0 { return "az önce" }
-        if diff < 60 { return "az önce" }
-        if diff < 3600 { return "\(diff / 60) dk önce" }
-        if diff < 86400 { return "\(diff / 3600) sa önce" }
+        if diff < 60 { return isTurkish ? "az önce" : "just now" }
+        if diff < 3600 {
+            let mins = diff / 60
+            return isTurkish ? "\(mins) dk önce" : "\(mins)m ago"
+        }
+        if diff < 86400 {
+            let hrs = diff / 3600
+            return isTurkish ? "\(hrs) sa önce" : "\(hrs)h ago"
+        }
         let days = diff / 86400
-        if days < 30 { return "\(days) gün önce" }
-        return "\(days / 30) ay önce"
+        if days < 30 {
+            return isTurkish ? "\(days) gün önce" : "\(days)d ago"
+        }
+        let months = days / 30
+        return isTurkish ? "\(months) ay önce" : "\(months)mo ago"
     }
 
-    public static func countdownString(until futureDate: Date, now: Date = Date()) -> String {
+    public static func countdownString(until futureDate: Date, now: Date = Date(), isTurkish: Bool) -> String {
         let diff = Int(futureDate.timeIntervalSince(now))
-        if diff <= 0 { return "yenilendi" }
+        if diff <= 0 { return isTurkish ? "yenilendi" : "reset" }
         let days = diff / 86400
         let hours = (diff % 86400) / 3600
         let minutes = (diff % 3600) / 60
         if days > 0 {
-            return "\(days)g \(hours)sa kaldı"
+            return isTurkish ? "\(days)g \(hours)sa kaldı" : "\(days)d \(hours)h left"
         }
         if hours > 0 {
-            return "\(hours)sa \(minutes)dk kaldı"
+            return isTurkish ? "\(hours)sa \(minutes)dk kaldı" : "\(hours)h \(minutes)m left"
         }
-        return "\(max(1, minutes)) dk kaldı"
+        let m = max(1, minutes)
+        return isTurkish ? "\(m) dk kaldı" : "\(m)m left"
+    }
+
+    public static func shortClockTime(_ date: Date, isTurkish: Bool) -> String {
+        let fmt = DateFormatter()
+        fmt.locale = Locale(identifier: isTurkish ? "tr_TR" : "en_US")
+        fmt.dateFormat = isTurkish ? "d MMM HH:mm" : "MMM d, HH:mm"
+        return fmt.string(from: date)
+    }
+}
+
+public enum TurkishDateFormatter {
+    public static func relativeString(from date: Date, now: Date = Date()) -> String {
+        LocalizedDateFormatter.relativeString(from: date, now: now, isTurkish: true)
+    }
+
+    public static func countdownString(until futureDate: Date, now: Date = Date()) -> String {
+        LocalizedDateFormatter.countdownString(until: futureDate, now: now, isTurkish: true)
     }
 
     public static func shortClockTime(_ date: Date) -> String {
-        let fmt = DateFormatter()
-        fmt.locale = Locale(identifier: "tr_TR")
-        fmt.dateFormat = "d MMM HH:mm"
-        return fmt.string(from: date)
+        LocalizedDateFormatter.shortClockTime(date, isTurkish: true)
     }
 }

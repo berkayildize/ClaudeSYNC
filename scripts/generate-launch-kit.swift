@@ -6,16 +6,21 @@ import CoreMedia
 import CoreVideo
 import Foundation
 
-// MARK: - Paths
+// MARK: - Language Spec
 
-let rootURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
-let assetsURL = rootURL.appendingPathComponent("docs/assets", isDirectory: true)
-let visualsOutURL = rootURL.appendingPathComponent("launch-kit/visuals", isDirectory: true)
-let videoOutURL = rootURL.appendingPathComponent("launch-kit/video", isDirectory: true)
-let keyframesOutURL = videoOutURL.appendingPathComponent("keyframes", isDirectory: true)
+enum KitLang: String, CaseIterable {
+    case en
+    case tr
 
-try FileManager.default.createDirectory(at: visualsOutURL, withIntermediateDirectories: true)
-try FileManager.default.createDirectory(at: keyframesOutURL, withIntermediateDirectories: true)
+    var isTurkish: Bool { self == .tr }
+    var suffix: String { rawValue }
+    var upper: String { rawValue.uppercased() }
+}
+
+struct KitCopy {
+    let lang: KitLang
+    func t(_ tr: String, _ en: String) -> String { lang.isTurkish ? tr : en }
+}
 
 // MARK: - Flat Editorial Palette (Zero Gradients)
 
@@ -33,46 +38,52 @@ enum Palette {
     static let appleBlue = NSColor(calibratedRed: 0.16, green: 0.52, blue: 0.98, alpha: 1.0)
     static let appleGreen = NSColor(calibratedRed: 0.20, green: 0.80, blue: 0.45, alpha: 1.0)
     static let appleRed = NSColor(calibratedRed: 0.95, green: 0.30, blue: 0.35, alpha: 1.0)
-    static let appleOrange = NSColor(calibratedRed: 0.96, green: 0.63, blue: 0.16, alpha: 1.0)
 }
 
-// MARK: - Load Crisp Retina Assets
+// MARK: - Loaded Per-Language Retina Assets
 
-func loadCGImage(_ name: String) -> CGImage {
-    let url = assetsURL.appendingPathComponent(name)
-    guard let img = NSImage(contentsOf: url),
-          let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-        fatalError("Missing asset: \(url.path)")
+struct LangAssets {
+    let winMainDark: CGImage
+    let winLimitsDark: CGImage
+    let winProfilesDark: CGImage
+    let winSettingsDark: CGImage
+    let winMainLight: CGImage
+    let winOnboardingWelcome: CGImage
+    let winOnboardingPerms: CGImage
+    let imgMenuBarBars: CGImage
+
+    static func load(from dir: URL) -> LangAssets {
+        func loadCG(_ name: String) -> CGImage {
+            let url = dir.appendingPathComponent(name)
+            guard let img = NSImage(contentsOf: url),
+                  let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+                fatalError("Missing asset: \(url.path)")
+            }
+            return cg
+        }
+        func cropWindow(_ img: CGImage, padPx: Int = 56) -> CGImage {
+            let rect = CGRect(
+                x: padPx,
+                y: padPx,
+                width: max(1, img.width - padPx * 2),
+                height: max(1, img.height - padPx * 2)
+            )
+            return img.cropping(to: rect) ?? img
+        }
+        return LangAssets(
+            winMainDark: cropWindow(loadCG("app-main-dark.png")),
+            winLimitsDark: cropWindow(loadCG("app-limits-dark.png")),
+            winProfilesDark: cropWindow(loadCG("app-profiles-dark.png")),
+            winSettingsDark: cropWindow(loadCG("app-settings-dark.png")),
+            winMainLight: cropWindow(loadCG("app-main-light.png")),
+            winOnboardingWelcome: cropWindow(loadCG("app-onboarding-welcome-dark.png")),
+            winOnboardingPerms: cropWindow(loadCG("app-onboarding-permissions-dark.png")),
+            imgMenuBarBars: loadCG("menubar-bars.png")
+        )
     }
-    return cg
 }
 
-let imgMainDark = loadCGImage("app-main-dark.png")
-let imgLimitsDark = loadCGImage("app-limits-dark.png")
-let imgProfilesDark = loadCGImage("app-profiles-dark.png")
-let imgSettingsDark = loadCGImage("app-settings-dark.png")
-let imgMainLight = loadCGImage("app-main-light.png")
-let imgMenuBarPopover = loadCGImage("menubar-popover-dark.png")
-let imgMenuBarBars = loadCGImage("menubar-bars.png")
-
-/// Crops the outer studio margin (28pt = 56px @2x) cleanly off our captured window screenshots.
-func cropWindowOnly(_ img: CGImage, padPx: Int = 56) -> CGImage {
-    let rect = CGRect(
-        x: padPx,
-        y: padPx,
-        width: max(1, img.width - padPx * 2),
-        height: max(1, img.height - padPx * 2)
-    )
-    return img.cropping(to: rect) ?? img
-}
-
-let winMainDark = cropWindowOnly(imgMainDark)
-let winLimitsDark = cropWindowOnly(imgLimitsDark)
-let winProfilesDark = cropWindowOnly(imgProfilesDark)
-let winSettingsDark = cropWindowOnly(imgSettingsDark)
-let winMainLight = cropWindowOnly(imgMainLight)
-
-// MARK: - CoreGraphics Vector Helpers (Top-Left Origin Friendly)
+// MARK: - CoreGraphics Vector Helpers
 
 func withCanvas(width: Int, height: Int, draw: (CGContext, CGSize) -> Void) -> NSBitmapImageRep {
     let rep = NSBitmapImageRep(
@@ -105,10 +116,9 @@ func savePNG(_ rep: NSBitmapImageRep, to url: URL) throws {
         fatalError("PNG encoding failed")
     }
     try data.write(to: url)
-    print("Saved \(url.lastPathComponent) (\(rep.pixelsWide)x\(rep.pixelsHigh))")
+    print("Saved \(url.path) (\(rep.pixelsWide)x\(rep.pixelsHigh))")
 }
 
-/// Draws text using AppKit's crisp SF Pro CoreText rendering in standard bottom-left CG coordinates.
 func drawText(
     _ string: String,
     in rect: CGRect,
@@ -240,7 +250,7 @@ func drawClaudeSyncIcon(_ cg: CGContext, rect: CGRect) {
 
 func drawPill(_ cg: CGContext, text: String, centerX: CGFloat, y: CGFloat, height: CGFloat = 30, fill: NSColor = Palette.cardElevated, border: NSColor = Palette.hairlineDark, textColor: NSColor = Palette.textSecondary, fontSize: CGFloat = 12) {
     let font = NSFont.systemFont(ofSize: fontSize, weight: .semibold)
-    let attrs: [NSAttributedString.Key: Any] = [.font: font, .kern: 0.9]
+    let attrs: [NSAttributedString.Key: Any] = [.font: font, .kern: 0.85]
     let sz = (text as NSString).size(withAttributes: attrs)
     let w = sz.width + 28
     let rect = CGRect(x: centerX - w / 2, y: y, width: w, height: height)
@@ -251,7 +261,7 @@ func drawPill(_ cg: CGContext, text: String, centerX: CGFloat, y: CGFloat, heigh
         font: font,
         color: textColor,
         alignment: .center,
-        kern: 0.9
+        kern: 0.85
     )
 }
 
@@ -270,15 +280,14 @@ func drawSubtleDotGrid(_ cg: CGContext, size: CGSize, step: CGFloat = 36, alpha:
     cg.restoreGState()
 }
 
-// MARK: - Visual 1: Hero Banner (1600×900 — Twitter Hero + GitHub Social Preview)
+// MARK: - Visual 1: Hero Banner (1600×900)
 
-func generateHeroBanner() throws {
+func generateHeroBanner(copy: KitCopy, assets: LangAssets, outURL: URL, docsCopyURL: URL?) throws {
     let rep = withCanvas(width: 1600, height: 900) { cg, size in
         cg.setFillColor(Palette.canvasBg.cgColor)
         cg.fill(CGRect(origin: .zero, size: size))
         drawSubtleDotGrid(cg, size: size, step: 34, alpha: 0.04)
 
-        // Top symmetric brand row
         let iconSize: CGFloat = 34
         let brandW: CGFloat = 186
         let startX = (size.width - brandW) / 2
@@ -292,9 +301,8 @@ func generateHeroBanner() throws {
             kern: -0.4
         )
 
-        // Editorial crisp 2-line headline (zero gradients, exact hierarchy)
         drawText(
-            "Switch Claude accounts.",
+            copy.t("Claude hesapları arasında geç.", "Switch Claude accounts."),
             in: CGRect(x: 100, y: 736, width: 1400, height: 64),
             font: .systemFont(ofSize: 54, weight: .bold),
             color: Palette.textPrimary,
@@ -302,7 +310,7 @@ func generateHeroBanner() throws {
             kern: -1.4
         )
         drawText(
-            "Never lose your session.",
+            copy.t("Oturumunu asla kaybetme.", "Never lose your session."),
             in: CGRect(x: 100, y: 672, width: 1400, height: 64),
             font: .systemFont(ofSize: 54, weight: .bold),
             color: Palette.terracotta,
@@ -310,51 +318,50 @@ func generateHeroBanner() throws {
             kern: -1.4
         )
 
-        // Concise factual subcopy
         drawText(
-            "Native macOS app to sync local Claude Code sessions, monitor 5h / 7d limits in the menu bar, and auto-failover without logging out.",
-            in: CGRect(x: 180, y: 626, width: 1240, height: 32),
-            font: .systemFont(ofSize: 18, weight: .regular),
+            copy.t(
+                "Yerel Claude Code oturumlarını eşitleyen, 5s / 7g limitlerini üst barda gösteren ve çıkışsız otomatik geçiş yapan native macOS uygulaması.",
+                "Native macOS app to sync local Claude Code sessions, monitor 5h / 7d limits in the menu bar, and auto-failover without logging out."
+            ),
+            in: CGRect(x: 140, y: 626, width: 1320, height: 32),
+            font: .systemFont(ofSize: 17.5, weight: .regular),
             color: Palette.textSecondary,
             alignment: .center
         )
 
-        // Symmetric pill strip
-        drawPill(cg, text: "OPEN SOURCE · MIT", centerX: 590, y: 580, height: 28, fontSize: 11)
-        drawPill(cg, text: "100% LOCAL · ZERO NETWORK", centerX: 800, y: 580, height: 28, fontSize: 11)
-        drawPill(cg, text: "NATIVE SWIFTUI · 0% IDLE CPU", centerX: 1030, y: 580, height: 28, fontSize: 11)
+        drawPill(cg, text: copy.t("AÇIK KAYNAK · MIT", "OPEN SOURCE · MIT"), centerX: 560, y: 580, height: 28, fontSize: 11)
+        drawPill(cg, text: copy.t("%100 YEREL · SIFIR AĞ", "100% LOCAL · ZERO NETWORK"), centerX: 790, y: 580, height: 28, fontSize: 11)
+        drawPill(cg, text: copy.t("NATIVE SWIFTUI · TR & EN", "NATIVE SWIFTUI · EN & TR"), centerX: 1030, y: 580, height: 28, fontSize: 11)
 
-        // Real Retina Desktop App rising cleanly from bottom edge
         let appW: CGFloat = 1040
-        let appH: CGFloat = appW * (CGFloat(winMainDark.height) / CGFloat(winMainDark.width))
+        let appH: CGFloat = appW * (CGFloat(assets.winMainDark.height) / CGFloat(assets.winMainDark.width))
         let appRect = CGRect(x: (size.width - appW) / 2, y: 552 - appH, width: appW, height: appH)
 
-        // Subtle crisp architectural shadow frame (flat offset, no neon bloom)
-        fillRoundedRect(
-            cg,
-            rect: appRect.insetBy(dx: -1, dy: -1),
-            radius: 19,
-            fill: NSColor.black.withAlphaComponent(0.55)
-        )
-        drawClippedImage(cg, image: winMainDark, in: appRect, radius: 18, borderColor: Palette.hairlineStrong, borderWidth: 1.5)
+        fillRoundedRect(cg, rect: appRect.insetBy(dx: -1, dy: -1), radius: 19, fill: NSColor.black.withAlphaComponent(0.55))
+        drawClippedImage(cg, image: assets.winMainDark, in: appRect, radius: 18, borderColor: Palette.hairlineStrong, borderWidth: 1.5)
     }
 
-    try savePNG(rep, to: visualsOutURL.appendingPathComponent("01-hero-banner.png"))
-    try savePNG(rep, to: assetsURL.appendingPathComponent("hero-banner.png"))
+    try savePNG(rep, to: outURL)
+    if let docsCopyURL { try savePNG(rep, to: docsCopyURL) }
 }
 
 // MARK: - Visual 2: Symmetric 2×2 Feature Bento Grid (1600×1040)
 
-func generateFeatureBento() throws {
+func generateFeatureBento(copy: KitCopy, assets: LangAssets, outURL: URL, docsCopyURL: URL?) throws {
     let rep = withCanvas(width: 1600, height: 1040) { cg, size in
         cg.setFillColor(Palette.canvasBg.cgColor)
         cg.fill(CGRect(origin: .zero, size: size))
         drawSubtleDotGrid(cg, size: size, step: 36, alpha: 0.035)
 
-        // Top symmetric header
         drawClaudeSyncIcon(cg, rect: CGRect(x: 48, y: 954, width: 34, height: 34))
         drawText("ClaudeSYNC", in: CGRect(x: 94, y: 956, width: 220, height: 30), font: .systemFont(ofSize: 21, weight: .bold), color: Palette.textPrimary, kern: -0.4)
-        drawText("Built for multi-account Claude Code workflows on macOS", in: CGRect(x: 340, y: 959, width: 1212, height: 26), font: .systemFont(ofSize: 16, weight: .medium), color: Palette.textSecondary, alignment: .right)
+        drawText(
+            copy.t("macOS'ta çoklu Claude Code hesabı kullanan geliştiriciler için", "Built for multi-account Claude Code workflows on macOS"),
+            in: CGRect(x: 340, y: 959, width: 1212, height: 26),
+            font: .systemFont(ofSize: 16, weight: .medium),
+            color: Palette.textSecondary,
+            alignment: .right
+        )
 
         let padX: CGFloat = 48
         let gutter: CGFloat = 22
@@ -378,13 +385,12 @@ func generateFeatureBento() throws {
         // Card 1: Menu Bar Limit Bars
         drawCardHeader(
             c1,
-            eyebrow: "01 · MENU BAR TELEMETRY",
-            title: "Retina limit bars in your top bar",
-            desc: "Track both accounts (or 5h/7d windows) live — toggle icon ON/OFF anytime."
+            eyebrow: copy.t("01 · ÜST BAR TELEMETRİSİ", "01 · MENU BAR TELEMETRY"),
+            title: copy.t("Üst barda Retina limit barları", "Retina limit bars in your top bar"),
+            desc: copy.t("İki hesabı (veya 5s/7g) canlı izleyin — simgeyi istediğiniz an kapatın.", "Track both accounts (or 5h/7d windows) live — toggle icon ON/OFF anytime.")
         )
         let mbPreviewRect = CGRect(x: c1.minX + 28, y: c1.minY + 24, width: c1.width - 56, height: 266)
-        // Crop bottom 3 menu-bar strips from imgMenuBarBars cleanly
-        let barsCrop = imgMenuBarBars.cropping(to: CGRect(x: 24, y: 218, width: imgMenuBarBars.width - 48, height: imgMenuBarBars.height - 244)) ?? imgMenuBarBars
+        let barsCrop = assets.imgMenuBarBars.cropping(to: CGRect(x: 24, y: 218, width: assets.imgMenuBarBars.width - 48, height: assets.imgMenuBarBars.height - 244)) ?? assets.imgMenuBarBars
         fillRoundedRect(cg, rect: mbPreviewRect, radius: 14, fill: Palette.canvasBg, stroke: Palette.hairlineDark, lineWidth: 1)
         let innerBars = mbPreviewRect.insetBy(dx: 14, dy: 14)
         let barsAspect = CGFloat(barsCrop.width) / CGFloat(barsCrop.height)
@@ -401,16 +407,16 @@ func generateFeatureBento() throws {
         // Card 2: Zero-Logout Dual Profiles
         drawCardHeader(
             c2,
-            eyebrow: "02 · ZERO-LOGOUT DUAL PROFILES",
-            title: "Stay logged into both accounts",
-            desc: "Launch isolated --user-data-dir profiles with local MCPs & history preserved."
+            eyebrow: copy.t("02 · ÇIKIŞSIZ ÇİFT PROFİL", "02 · ZERO-LOGOUT DUAL PROFILES"),
+            title: copy.t("İki hesapta birden girişli kal", "Stay logged into both accounts"),
+            desc: copy.t("İzole --user-data-dir profillerini yerel MCP ayarlarıyla tek tıkla başlatın.", "Launch isolated --user-data-dir profiles with local MCPs & history preserved.")
         )
-        let profSlice = winProfilesDark.cropping(to: CGRect(
-            x: Int(Double(winProfilesDark.width) * 0.245),
-            y: Int(Double(winProfilesDark.height) * 0.235),
-            width: Int(Double(winProfilesDark.width) * 0.735),
-            height: Int(Double(winProfilesDark.height) * 0.505)
-        )) ?? winProfilesDark
+        let profSlice = assets.winProfilesDark.cropping(to: CGRect(
+            x: Int(Double(assets.winProfilesDark.width) * 0.245),
+            y: Int(Double(assets.winProfilesDark.height) * 0.235),
+            width: Int(Double(assets.winProfilesDark.width) * 0.735),
+            height: Int(Double(assets.winProfilesDark.height) * 0.505)
+        )) ?? assets.winProfilesDark
         let profRect = CGRect(x: c2.minX + 28, y: c2.minY + 24, width: c2.width - 56, height: 266)
         fillRoundedRect(cg, rect: profRect, radius: 14, fill: Palette.canvasBg, stroke: Palette.hairlineDark, lineWidth: 1)
         let pInner = profRect.insetBy(dx: 12, dy: 12)
@@ -422,16 +428,16 @@ func generateFeatureBento() throws {
         // Card 3: Live Limits & Auto-Failover
         drawCardHeader(
             c3,
-            eyebrow: "03 · REAL-TIME LIMITS & AUTO FAILOVER",
-            title: "Automatic switch on 429 or 95%",
-            desc: "Reads local plan-usage-history & 429 resetsAt countdowns in real time."
+            eyebrow: copy.t("03 · CANLI LİMİTLER & OTO GEÇİŞ", "03 · REAL-TIME LIMITS & AUTO FAILOVER"),
+            title: copy.t("429 veya %95'te otomatik geçiş", "Automatic switch on 429 or 95%"),
+            desc: copy.t("Yerel plan-usage-history ve 429 yenilenme sayaçlarını anlık okur.", "Reads local plan-usage-history & 429 resetsAt countdowns in real time.")
         )
-        let limSlice = winLimitsDark.cropping(to: CGRect(
-            x: Int(Double(winLimitsDark.width) * 0.255),
-            y: Int(Double(winLimitsDark.height) * 0.40),
-            width: Int(Double(winLimitsDark.width) * 0.72),
-            height: Int(Double(winLimitsDark.height) * 0.50)
-        )) ?? winLimitsDark
+        let limSlice = assets.winLimitsDark.cropping(to: CGRect(
+            x: Int(Double(assets.winLimitsDark.width) * 0.248),
+            y: Int(Double(assets.winLimitsDark.height) * 0.40),
+            width: Int(Double(assets.winLimitsDark.width) * 0.73),
+            height: Int(Double(assets.winLimitsDark.height) * 0.50)
+        )) ?? assets.winLimitsDark
         let limRect = CGRect(x: c3.minX + 28, y: c3.minY + 24, width: c3.width - 56, height: 266)
         fillRoundedRect(cg, rect: limRect, radius: 14, fill: Palette.canvasBg, stroke: Palette.hairlineDark, lineWidth: 1)
         let lInner = limRect.insetBy(dx: 12, dy: 12)
@@ -440,17 +446,16 @@ func generateFeatureBento() throws {
         let lW = lH * lAspect
         drawClippedImage(cg, image: limSlice, in: CGRect(x: lInner.midX - lW / 2, y: lInner.midY - lH / 2, width: lW, height: lH), radius: 10, borderColor: Palette.hairlineDark, borderWidth: 1)
 
-        // Card 4: Auto Card Sync & Privacy Engineering
+        // Card 4: Auto Card Sync & Safety
         drawCardHeader(
             c4,
-            eyebrow: "04 · AUTO SHARED CARD SYNC & SAFETY",
-            title: "Work in Account B. Stay synced in A.",
-            desc: "Shared session cards mirror silently in the background — zero cloud calls."
+            eyebrow: copy.t("04 · OTO KART EŞİTLEME & GÜVENLİK", "04 · AUTO SHARED CARD SYNC & SAFETY"),
+            title: copy.t("B hesabında çalış. A'da eşit kalsın.", "Work in Account B. Stay synced in A."),
+            desc: copy.t("Ortak oturum kartları arka planda sessizce aynalanır — sıfır bulut.", "Shared session cards mirror silently in the background — zero cloud calls.")
         )
         let diagRect = CGRect(x: c4.minX + 28, y: c4.minY + 24, width: c4.width - 56, height: 266)
         fillRoundedRect(cg, rect: diagRect, radius: 14, fill: Palette.canvasBg, stroke: Palette.hairlineDark, lineWidth: 1)
 
-        // Clean 3-box horizontal architecture schematic inside Card 4
         let boxW: CGFloat = 178
         let boxH: CGFloat = 94
         let midY = diagRect.minY + 132
@@ -459,18 +464,17 @@ func generateFeatureBento() throws {
         let b3 = CGRect(x: diagRect.maxX - 24 - boxW, y: midY, width: boxW, height: boxH)
 
         fillRoundedRect(cg, rect: b1, radius: 12, fill: Palette.cardBg, stroke: Palette.appleGreen.withAlphaComponent(0.45), lineWidth: 1.2)
-        drawText("Account 1", in: CGRect(x: b1.minX + 12, y: b1.maxY - 34, width: b1.width - 24, height: 22), font: .systemFont(ofSize: 15, weight: .bold), color: Palette.textPrimary, alignment: .center)
-        drawText("local_X.json\n142 turns", in: CGRect(x: b1.minX + 10, y: b1.minY + 14, width: b1.width - 20, height: 38), font: .monospacedSystemFont(ofSize: 11.5, weight: .medium), color: Palette.textSecondary, alignment: .center)
+        drawText(copy.t("1. Hesap", "Account 1"), in: CGRect(x: b1.minX + 12, y: b1.maxY - 34, width: b1.width - 24, height: 22), font: .systemFont(ofSize: 15, weight: .bold), color: Palette.textPrimary, alignment: .center)
+        drawText(copy.t("local_X.json\n142 tur", "local_X.json\n142 turns"), in: CGRect(x: b1.minX + 10, y: b1.minY + 14, width: b1.width - 20, height: 38), font: .monospacedSystemFont(ofSize: 11.5, weight: .medium), color: Palette.textSecondary, alignment: .center)
 
         fillRoundedRect(cg, rect: b2, radius: 12, fill: Palette.cardElevated, stroke: Palette.terracotta.withAlphaComponent(0.60), lineWidth: 1.4)
-        drawText("Shared Transcript", in: CGRect(x: b2.minX + 8, y: b2.maxY - 34, width: b2.width - 16, height: 22), font: .systemFont(ofSize: 14, weight: .bold), color: Palette.terracotta, alignment: .center)
+        drawText(copy.t("Ortak Transcript", "Shared Transcript"), in: CGRect(x: b2.minX + 8, y: b2.maxY - 34, width: b2.width - 16, height: 22), font: .systemFont(ofSize: 14, weight: .bold), color: Palette.terracotta, alignment: .center)
         drawText("~/.claude/projects/\n<cliId>.jsonl", in: CGRect(x: b2.minX + 8, y: b2.minY + 14, width: b2.width - 16, height: 38), font: .monospacedSystemFont(ofSize: 11, weight: .medium), color: Palette.textPrimary, alignment: .center)
 
         fillRoundedRect(cg, rect: b3, radius: 12, fill: Palette.cardBg, stroke: Palette.appleBlue.withAlphaComponent(0.45), lineWidth: 1.2)
-        drawText("Account 2", in: CGRect(x: b3.minX + 12, y: b3.maxY - 34, width: b3.width - 24, height: 22), font: .systemFont(ofSize: 15, weight: .bold), color: Palette.textPrimary, alignment: .center)
-        drawText("local_X.json\nAuto-Synced ✓", in: CGRect(x: b3.minX + 10, y: b3.minY + 14, width: b3.width - 20, height: 38), font: .monospacedSystemFont(ofSize: 11.5, weight: .medium), color: Palette.appleGreen, alignment: .center)
+        drawText(copy.t("2. Hesap", "Account 2"), in: CGRect(x: b3.minX + 12, y: b3.maxY - 34, width: b3.width - 24, height: 22), font: .systemFont(ofSize: 15, weight: .bold), color: Palette.textPrimary, alignment: .center)
+        drawText(copy.t("local_X.json\nOto Eşit ✓", "local_X.json\nAuto-Synced ✓"), in: CGRect(x: b3.minX + 10, y: b3.minY + 14, width: b3.width - 20, height: 38), font: .monospacedSystemFont(ofSize: 11.5, weight: .medium), color: Palette.appleGreen, alignment: .center)
 
-        // Connectors
         cg.saveGState()
         cg.setStrokeColor(Palette.hairlineStrong.cgColor)
         cg.setLineWidth(1.8)
@@ -481,10 +485,13 @@ func generateFeatureBento() throws {
         cg.strokePath()
         cg.restoreGState()
 
-        // Bottom 3 safety specs cleanly symmetric
         let specY = diagRect.minY + 26
         let specW = (diagRect.width - 48 - 20) / 3
-        let specs: [(String, String)] = [
+        let specs: [(String, String)] = copy.lang.isTurkish ? [
+            ("Sıfır Şifre/Token", "Çerez veya Keychain okumaz"),
+            ("Otomatik Yedek", "Yazmadan önce zaman damgalı"),
+            ("Atomik 0600", "Bulut bridgeSessionIds temizler")
+        ] : [
             ("Zero Credentials", "Never reads Cookies or Keychain"),
             ("Auto Backups", "Timestamped restore before write"),
             ("Atomic 0600", "Strips cloud bridgeSessionIds")
@@ -498,36 +505,38 @@ func generateFeatureBento() throws {
         }
     }
 
-    try savePNG(rep, to: visualsOutURL.appendingPathComponent("02-bento-features.png"))
+    try savePNG(rep, to: outURL)
+    if let docsCopyURL { try savePNG(rep, to: docsCopyURL) }
 }
 
-// MARK: - Visual 3: Architecture Diagram (1600×900 — Why & How It Works)
+// MARK: - Visual 3: Architecture Diagram (1600×900)
 
-func generateArchitectureVisual() throws {
+func generateArchitectureVisual(copy: KitCopy, outURL: URL, docsCopyURL: URL?) throws {
     let rep = withCanvas(width: 1600, height: 900) { cg, size in
         cg.setFillColor(Palette.canvasBg.cgColor)
         cg.fill(CGRect(origin: .zero, size: size))
         drawSubtleDotGrid(cg, size: size, step: 36, alpha: 0.04)
 
-        // Header
-        drawPill(cg, text: "HOW CLAUDESYNC WORKS UNDER THE HOOD", centerX: size.width / 2, y: 822, height: 28, textColor: Palette.terracotta, fontSize: 11)
+        drawPill(cg, text: copy.t("CLAUDESYNC ARKA PLANDA NASIL ÇALIŞIR?", "HOW CLAUDESYNC WORKS UNDER THE HOOD"), centerX: size.width / 2, y: 822, height: 28, textColor: Palette.terracotta, fontSize: 11)
         drawText(
-            "Local-first architecture. Zero credential hacks.",
-            in: CGRect(x: 100, y: 748, width: 1400, height: 56),
-            font: .systemFont(ofSize: 44, weight: .bold),
+            copy.t("Tamamen yerel mimari. Sıfır cookie/token müdahalesi.", "Local-first architecture. Zero credential hacks."),
+            in: CGRect(x: 80, y: 748, width: 1440, height: 56),
+            font: .systemFont(ofSize: 42, weight: .bold),
             color: Palette.textPrimary,
             alignment: .center,
-            kern: -1.1
+            kern: -1.0
         )
         drawText(
-            "Claude Desktop already shares conversation transcripts on disk. ClaudeSYNC safely bridges the per-account index cards.",
-            in: CGRect(x: 200, y: 706, width: 1200, height: 30),
+            copy.t(
+                "Claude Desktop sohbet kayıtlarını diskte zaten ortak tutar. ClaudeSYNC hesap bazlı yan menü kartlarını güvenle köprüler.",
+                "Claude Desktop already shares conversation transcripts on disk. ClaudeSYNC safely bridges the per-account index cards."
+            ),
+            in: CGRect(x: 160, y: 706, width: 1280, height: 30),
             font: .systemFont(ofSize: 17, weight: .regular),
             color: Palette.textSecondary,
             alignment: .center
         )
 
-        // Three Symmetric Columns: Profile 1 | ClaudeSYNC Engine | Profile 2
         let colW: CGFloat = 440
         let colH: CGFloat = 460
         let colY: CGFloat = 176
@@ -538,12 +547,16 @@ func generateArchitectureVisual() throws {
         let midCol = CGRect(x: startX + colW + gap, y: colY, width: colW, height: colH)
         let rightCol = CGRect(x: startX + (colW + gap) * 2, y: colY, width: colW, height: colH)
 
-        // Left: Account 1
+        // Left
         fillRoundedRect(cg, rect: leftCol, radius: 18, fill: Palette.cardBg, stroke: Palette.appleGreen.withAlphaComponent(0.35), lineWidth: 1.2)
-        drawText("PROFILE 1 · ACCOUNT A", in: CGRect(x: leftCol.minX + 26, y: leftCol.maxY - 42, width: colW - 52, height: 18), font: .systemFont(ofSize: 11, weight: .bold), color: Palette.appleGreen, kern: 1.0)
-        drawText("Claude Desktop (Primary)", in: CGRect(x: leftCol.minX + 26, y: leftCol.maxY - 76, width: colW - 52, height: 28), font: .systemFont(ofSize: 22, weight: .bold), color: Palette.textPrimary)
+        drawText(copy.t("1. PROFİL · HESAP A", "PROFILE 1 · ACCOUNT A"), in: CGRect(x: leftCol.minX + 26, y: leftCol.maxY - 42, width: colW - 52, height: 18), font: .systemFont(ofSize: 11, weight: .bold), color: Palette.appleGreen, kern: 1.0)
+        drawText(copy.t("Claude Desktop (Ana Profil)", "Claude Desktop (Primary)"), in: CGRect(x: leftCol.minX + 26, y: leftCol.maxY - 76, width: colW - 52, height: 28), font: .systemFont(ofSize: 22, weight: .bold), color: Palette.textPrimary)
 
-        let leftBoxes: [(String, String, String)] = [
+        let leftBoxes: [(String, String, String)] = copy.lang.isTurkish ? [
+            ("Oturum İndeks Kartları", "~/Library/Application Support/Claude/\nclaude-code-sessions/<acc1>/<org1>/", "local_*.json"),
+            ("Kullanım Telemetrisi", "plan-usage-history.json", "5s / 7g / xu"),
+            ("Canlı Süreç Algılama", "claude --resume=<cliSessionId>", "Aktif PID")
+        ] : [
             ("Session Index Cards", "~/Library/Application Support/Claude/\nclaude-code-sessions/<acc1>/<org1>/", "local_*.json"),
             ("Usage Telemetry", "plan-usage-history.json", "5h / 7d / xu"),
             ("Live Process State", "claude --resume=<cliSessionId>", "Active PID")
@@ -556,13 +569,18 @@ func generateArchitectureVisual() throws {
             drawText(item.1, in: CGRect(x: r.minX + 16, y: r.minY + 12, width: r.width - 32, height: 40), font: .monospacedSystemFont(ofSize: 11.5, weight: .regular), color: Palette.textSecondary)
         }
 
-        // Center: ClaudeSYNC Engine
+        // Center
         fillRoundedRect(cg, rect: midCol, radius: 18, fill: Palette.cardElevated, stroke: Palette.terracotta.withAlphaComponent(0.55), lineWidth: 1.5)
         drawClaudeSyncIcon(cg, rect: CGRect(x: midCol.midX - 24, y: midCol.maxY - 72, width: 48, height: 48))
-        drawText("ClaudeSYNC Engine", in: CGRect(x: midCol.minX + 20, y: midCol.maxY - 114, width: colW - 40, height: 30), font: .systemFont(ofSize: 23, weight: .bold), color: Palette.textPrimary, alignment: .center)
-        drawText("Pure Swift · Local Filesystem Only", in: CGRect(x: midCol.minX + 20, y: midCol.maxY - 138, width: colW - 40, height: 20), font: .systemFont(ofSize: 13, weight: .medium), color: Palette.terracotta, alignment: .center)
+        drawText(copy.t("ClaudeSYNC Motoru", "ClaudeSYNC Engine"), in: CGRect(x: midCol.minX + 20, y: midCol.maxY - 114, width: colW - 40, height: 30), font: .systemFont(ofSize: 23, weight: .bold), color: Palette.textPrimary, alignment: .center)
+        drawText(copy.t("Saf Swift · Yalnızca Yerel Dosya Sistemi", "Pure Swift · Local Filesystem Only"), in: CGRect(x: midCol.minX + 20, y: midCol.maxY - 138, width: colW - 40, height: 20), font: .systemFont(ofSize: 13, weight: .medium), color: Palette.terracotta, alignment: .center)
 
-        let steps: [(String, String)] = [
+        let steps: [(String, String)] = copy.lang.isTurkish ? [
+            ("1. Ortak Transcript Doğrulama", "~/.claude/projects/<cliId>.jsonl diskte doğrulanır"),
+            ("2. Hesaplar Arası Temizlik", "bridgeSessionIds & remoteMcpServersConfig temizler"),
+            ("3. Atomik Yedek & Yazım", "Zaman damgalı yedek + atomik 0600 JSON yazım"),
+            ("4. Oto Kart Aynalama & Failover", "Ortak kartları eşitler + 429'da otomatik geçer")
+        ] : [
             ("1. Shared Transcript Verification", "Confirms ~/.claude/projects/<cliId>.jsonl on disk"),
             ("2. Cross-Account Hygiene", "Strips bridgeSessionIds & remoteMcpServersConfig"),
             ("3. Atomic Backup & Write", "Timestamped backup + atomic 0600 JSON write"),
@@ -572,15 +590,19 @@ func generateArchitectureVisual() throws {
             let r = CGRect(x: midCol.minX + 24, y: midCol.maxY - 224 - CGFloat(i) * 74, width: colW - 48, height: 62)
             fillRoundedRect(cg, rect: r, radius: 10, fill: Palette.canvasBg, stroke: Palette.hairlineDark, lineWidth: 1)
             drawText(step.0, in: CGRect(x: r.minX + 14, y: r.maxY - 27, width: r.width - 28, height: 18), font: .systemFont(ofSize: 13, weight: .semibold), color: Palette.textPrimary)
-            drawText(step.1, in: CGRect(x: r.minX + 14, y: r.minY + 10, width: r.width - 28, height: 18), font: .systemFont(ofSize: 11.5, weight: .regular), color: Palette.textSecondary)
+            drawText(step.1, in: CGRect(x: r.minX + 14, y: r.minY + 10, width: r.width - 28, height: 18), font: .systemFont(ofSize: 11.2, weight: .regular), color: Palette.textSecondary)
         }
 
-        // Right: Account 2
+        // Right
         fillRoundedRect(cg, rect: rightCol, radius: 18, fill: Palette.cardBg, stroke: Palette.appleBlue.withAlphaComponent(0.35), lineWidth: 1.2)
-        drawText("PROFILE 2 · ACCOUNT B", in: CGRect(x: rightCol.minX + 26, y: rightCol.maxY - 42, width: colW - 52, height: 18), font: .systemFont(ofSize: 11, weight: .bold), color: Palette.appleBlue, kern: 1.0)
-        drawText("Claude Desktop (Isolated)", in: CGRect(x: rightCol.minX + 26, y: rightCol.maxY - 76, width: colW - 52, height: 28), font: .systemFont(ofSize: 22, weight: .bold), color: Palette.textPrimary)
+        drawText(copy.t("2. PROFİL · HESAP B", "PROFILE 2 · ACCOUNT B"), in: CGRect(x: rightCol.minX + 26, y: rightCol.maxY - 42, width: colW - 52, height: 18), font: .systemFont(ofSize: 11, weight: .bold), color: Palette.appleBlue, kern: 1.0)
+        drawText(copy.t("Claude Desktop (İzole Profil)", "Claude Desktop (Isolated)"), in: CGRect(x: rightCol.minX + 26, y: rightCol.maxY - 76, width: colW - 52, height: 28), font: .systemFont(ofSize: 22, weight: .bold), color: Palette.textPrimary)
 
-        let rightBoxes: [(String, String, String)] = [
+        let rightBoxes: [(String, String, String)] = copy.lang.isTurkish ? [
+            ("İzole --user-data-dir", "~/Library/Application Support/\nClaude-Account2/", "Çıkışsız"),
+            ("Eşitlenen Yan Menü Kartları", "Tam sohbet bağlamıyla en üstte\nanında kaldığın yerden devam", "Oto Aynalama"),
+            ("Ortak Transcript Katmanı", "~/.claude/projects/*/*.jsonl\nÇift kopya yok, tek gerçek kaynak", "Ortak Disk")
+        ] : [
             ("Isolated --user-data-dir", "~/Library/Application Support/\nClaude-Account2/", "Zero Logout"),
             ("Synced Sidebar Cards", "Instant top-of-sidebar continuity\nwith full conversation context", "Auto Mirror"),
             ("Shared Transcript Layer", "~/.claude/projects/*/*.jsonl\nZero duplication, single source of truth", "Shared Disk")
@@ -593,7 +615,7 @@ func generateArchitectureVisual() throws {
             drawText(item.1, in: CGRect(x: r.minX + 16, y: r.minY + 12, width: r.width - 32, height: 40), font: .monospacedSystemFont(ofSize: 11.5, weight: .regular), color: Palette.textSecondary)
         }
 
-        // Crisp horizontal double-headed arrows linking the 3 columns
+        // Connectors
         cg.saveGState()
         cg.setStrokeColor(Palette.terracotta.cgColor)
         cg.setLineWidth(2.2)
@@ -612,10 +634,14 @@ func generateArchitectureVisual() throws {
         cg.strokePath()
         cg.restoreGState()
 
-        // Bottom clean engineering spec footer
         let footerRect = CGRect(x: startX, y: 66, width: size.width - startX * 2, height: 68)
         fillRoundedRect(cg, rect: footerRect, radius: 14, fill: Palette.cardBg, stroke: Palette.hairlineDark, lineWidth: 1)
-        let footerItems = [
+        let footerItems = copy.lang.isTurkish ? [
+            "Native SwiftUI + AppKit",
+            "Sıfır Electron (1.3 MB DMG)",
+            "Sıfır Ağ / Sıfır Telemetri",
+            "github.com/berkayildize/ClaudeSYNC"
+        ] : [
             "Native SwiftUI + AppKit",
             "Zero Electron Bloat (1.3 MB DMG)",
             "Zero Network / Zero Telemetry",
@@ -638,41 +664,38 @@ func generateArchitectureVisual() throws {
         }
     }
 
-    try savePNG(rep, to: visualsOutURL.appendingPathComponent("03-architecture.png"))
+    try savePNG(rep, to: outURL)
+    if let docsCopyURL { try savePNG(rep, to: docsCopyURL) }
 }
 
-// MARK: - Visual 4: Dark & Light Native macOS Split Showcase (1600×900)
+// MARK: - Visual 4: Dark & Light Split Showcase (1600×900)
 
-func generateDarkLightShowcase() throws {
+func generateDarkLightShowcase(copy: KitCopy, assets: LangAssets, outURL: URL, docsCopyURL: URL?) throws {
     let rep = withCanvas(width: 1600, height: 900) { cg, size in
-        // Exact 50/50 split background: Obsidian Left | Alabaster Right
         cg.setFillColor(Palette.canvasBg.cgColor)
         cg.fill(CGRect(x: 0, y: 0, width: size.width / 2, height: size.height))
         cg.setFillColor(Palette.lightBg.cgColor)
         cg.fill(CGRect(x: size.width / 2, y: 0, width: size.width / 2, height: size.height))
 
-        // Crisp center hairline seam
         cg.setFillColor(NSColor.gray.withAlphaComponent(0.25).cgColor)
         cg.fill(CGRect(x: size.width / 2 - 0.5, y: 0, width: 1, height: size.height))
 
-        // Left & Right aligned captions
-        drawText("DARK MODE", in: CGRect(x: 56, y: 824, width: 320, height: 22), font: .systemFont(ofSize: 12, weight: .bold), color: Palette.terracotta, kern: 1.4)
-        drawText("Native macOS Glass.", in: CGRect(x: 56, y: 774, width: 680, height: 46), font: .systemFont(ofSize: 38, weight: .bold), color: Palette.textPrimary, kern: -0.9)
+        drawText(copy.t("KOYU TEMA", "DARK MODE"), in: CGRect(x: 56, y: 824, width: 320, height: 22), font: .systemFont(ofSize: 12, weight: .bold), color: Palette.terracotta, kern: 1.4)
+        drawText(copy.t("Native macOS Cam Tasarım.", "Native macOS Glass."), in: CGRect(x: 56, y: 774, width: 680, height: 46), font: .systemFont(ofSize: 38, weight: .bold), color: Palette.textPrimary, kern: -0.9)
 
-        drawText("LIGHT MODE", in: CGRect(x: size.width / 2 + 56, y: 824, width: 320, height: 22), font: .systemFont(ofSize: 12, weight: .bold), color: Palette.terracotta, kern: 1.4)
-        drawText("120Hz ProMotion. Zero Gradients.", in: CGRect(x: size.width / 2 + 56, y: 774, width: 700, height: 46), font: .systemFont(ofSize: 38, weight: .bold), color: NSColor(calibratedWhite: 0.11, alpha: 1.0), kern: -0.9)
+        drawText(copy.t("AÇIK TEMA", "LIGHT MODE"), in: CGRect(x: size.width / 2 + 56, y: 824, width: 320, height: 22), font: .systemFont(ofSize: 12, weight: .bold), color: Palette.terracotta, kern: 1.4)
+        drawText(copy.t("120Hz Akıcılık. Sıfır Gradyan.", "120Hz ProMotion. Zero Gradients."), in: CGRect(x: size.width / 2 + 56, y: 774, width: 700, height: 46), font: .systemFont(ofSize: 38, weight: .bold), color: NSColor(calibratedWhite: 0.11, alpha: 1.0), kern: -0.9)
 
         let cardW: CGFloat = 716
-        let cardH: CGFloat = cardW * (CGFloat(winMainDark.height) / CGFloat(winMainDark.width))
+        let cardH: CGFloat = cardW * (CGFloat(assets.winMainDark.height) / CGFloat(assets.winMainDark.width))
         let yPos: CGFloat = (736 - cardH) / 2 + 12
 
         let leftRect = CGRect(x: (size.width / 2 - cardW) / 2, y: yPos, width: cardW, height: cardH)
         let rightRect = CGRect(x: size.width / 2 + (size.width / 2 - cardW) / 2, y: yPos, width: cardW, height: cardH)
 
-        drawClippedImage(cg, image: winMainDark, in: leftRect, radius: 15, borderColor: Palette.hairlineStrong, borderWidth: 1.5)
-        drawClippedImage(cg, image: winMainLight, in: rightRect, radius: 15, borderColor: NSColor.black.withAlphaComponent(0.14), borderWidth: 1.5)
+        drawClippedImage(cg, image: assets.winMainDark, in: leftRect, radius: 15, borderColor: Palette.hairlineStrong, borderWidth: 1.5)
+        drawClippedImage(cg, image: assets.winMainLight, in: rightRect, radius: 15, borderColor: NSColor.black.withAlphaComponent(0.14), borderWidth: 1.5)
 
-        // Centered floating brand pill across the seam at bottom
         drawPill(
             cg,
             text: "ClaudeSYNC · github.com/berkayildize/ClaudeSYNC",
@@ -686,10 +709,72 @@ func generateDarkLightShowcase() throws {
         )
     }
 
-    try savePNG(rep, to: visualsOutURL.appendingPathComponent("04-dark-light-split.png"))
+    try savePNG(rep, to: outURL)
+    if let docsCopyURL { try savePNG(rep, to: docsCopyURL) }
 }
 
-// MARK: - 1080p60 Launch Promo Video (AVAssetWriter Hardware H.264 — 22s, 1320 Frames)
+// MARK: - Visual 5: First-Launch Setup Wizard & Permissions Showcase (1600×900)
+
+func generateOnboardingShowcase(copy: KitCopy, assets: LangAssets, outURL: URL, docsCopyURL: URL?) throws {
+    let rep = withCanvas(width: 1600, height: 900) { cg, size in
+        cg.setFillColor(Palette.canvasBg.cgColor)
+        cg.fill(CGRect(origin: .zero, size: size))
+        drawSubtleDotGrid(cg, size: size, step: 36, alpha: 0.04)
+
+        drawPill(cg, text: copy.t("İLK KURULUM SİHİRBAZI · TR & EN", "FIRST-LAUNCH SETUP WIZARD · EN & TR"), centerX: size.width / 2, y: 828, height: 28, textColor: Palette.terracotta, fontSize: 11)
+        drawText(
+            copy.t("60 saniyede kurulum. Şeffaf izin kontrolü.", "Ready in 60 seconds. Zero invasive permissions."),
+            in: CGRect(x: 100, y: 754, width: 1400, height: 56),
+            font: .systemFont(ofSize: 44, weight: .bold),
+            color: Palette.textPrimary,
+            alignment: .center,
+            kern: -1.1
+        )
+        drawText(
+            copy.t(
+                "DMG'yi açtığınız anda dil seçimi, Claude Desktop klasör doğrulaması, bildirim izni ve 2. profil kurulumu adım adım hazır.",
+                "Pick English or Turkish on first launch, verify local Claude folders & notifications, and configure dual profiles step by step."
+            ),
+            in: CGRect(x: 160, y: 712, width: 1280, height: 30),
+            font: .systemFont(ofSize: 17, weight: .regular),
+            color: Palette.textSecondary,
+            alignment: .center
+        )
+
+        // Two clean symmetric macOS windows side-by-side: Step 1 (Language) & Step 2 (System & Permissions)
+        let padX: CGFloat = 56
+        let gap: CGFloat = 28
+        let winW: CGFloat = (size.width - padX * 2 - gap) / 2
+        let winH: CGFloat = winW * (CGFloat(assets.winOnboardingWelcome.height) / CGFloat(assets.winOnboardingWelcome.width))
+        let yPos: CGFloat = 112
+
+        let leftRect = CGRect(x: padX, y: yPos, width: winW, height: winH)
+        let rightRect = CGRect(x: padX + winW + gap, y: yPos, width: winW, height: winH)
+
+        drawText(copy.t("ADIM 1 · CANLI DİL SEÇİMİ (TR / EN / SİSTEM)", "STEP 1 · LIVE LANGUAGE PICKER (EN / TR / AUTO)"), in: CGRect(x: leftRect.minX, y: leftRect.maxY + 12, width: winW, height: 20), font: .systemFont(ofSize: 11, weight: .bold), color: Palette.textSecondary, alignment: .center, kern: 0.8)
+        drawText(copy.t("ADIM 2 · SİSTEM & İZİN DOĞRULAMA", "STEP 2 · ENVIRONMENT & PERMISSIONS CHECK"), in: CGRect(x: rightRect.minX, y: rightRect.maxY + 12, width: winW, height: 20), font: .systemFont(ofSize: 11, weight: .bold), color: Palette.textSecondary, alignment: .center, kern: 0.8)
+
+        drawClippedImage(cg, image: assets.winOnboardingWelcome, in: leftRect, radius: 14, borderColor: Palette.hairlineStrong, borderWidth: 1.4)
+        drawClippedImage(cg, image: assets.winOnboardingPerms, in: rightRect, radius: 14, borderColor: Palette.hairlineStrong, borderWidth: 1.4)
+
+        drawPill(
+            cg,
+            text: copy.t("Erişilebilirlik Yok · Ekran Kaydı Yok · Keychain Erişimi Yok", "No Accessibility · No Screen Recording · No Keychain Access"),
+            centerX: size.width / 2,
+            y: 44,
+            height: 34,
+            fill: Palette.cardBg,
+            border: Palette.appleGreen.withAlphaComponent(0.38),
+            textColor: Palette.appleGreen,
+            fontSize: 12
+        )
+    }
+
+    try savePNG(rep, to: outURL)
+    if let docsCopyURL { try savePNG(rep, to: docsCopyURL) }
+}
+
+// MARK: - 1080p60 Bilingual Launch Promo Video (25s, 1500 Frames, 7 Scenes)
 
 func easeOutCubic(_ t: Double) -> Double {
     let x = min(max(t, 0), 1)
@@ -703,52 +788,47 @@ func easeInOutCubic(_ t: Double) -> Double {
 
 func clamp01(_ v: Double) -> Double { min(max(v, 0), 1) }
 
-func drawVideoFrame(cg: CGContext, time: Double) {
+func drawVideoFrame(cg: CGContext, time: Double, copy: KitCopy, assets: LangAssets) {
     let w: CGFloat = 1920
     let h: CGFloat = 1080
     let size = CGSize(width: w, height: h)
+    let totalDuration = 25.0
 
-    // Matte obsidian studio backdrop
     cg.setFillColor(Palette.canvasBg.cgColor)
     cg.fill(CGRect(origin: .zero, size: size))
     drawSubtleDotGrid(cg, size: size, step: 40, alpha: 0.036)
 
-    // Subtle thin progress rail along the very bottom (Apple Keynote style)
-    let progress = CGFloat(clamp01(time / 22.0))
+    // Bottom thin terracotta timeline rail
+    let progress = CGFloat(clamp01(time / totalDuration))
     cg.setFillColor(NSColor.white.withAlphaComponent(0.08).cgColor)
     cg.fill(CGRect(x: 0, y: 0, width: w, height: 3))
     cg.setFillColor(Palette.terracotta.cgColor)
     cg.fill(CGRect(x: 0, y: 0, width: w * progress, height: 3))
 
-    // Helper for smooth scene alpha envelopes
     func sceneAlpha(start: Double, end: Double, fadeIn: Double = 0.45, fadeOut: Double = 0.40) -> Double {
         let aIn = easeOutCubic((time - start) / fadeIn)
         let aOut = 1.0 - easeInOutCubic((time - (end - fadeOut)) / fadeOut)
         return clamp01(min(aIn, aOut))
     }
 
-    // ------------------------------------------------------------------
-    // SCENE 1 (0.0s – 3.8s): Hook — Problem & Brand Reveal
-    // ------------------------------------------------------------------
-    if time < 4.0 {
-        let a = sceneAlpha(start: 0.0, end: 3.8, fadeIn: 0.5, fadeOut: 0.45)
-        let pIcon = easeOutCubic(time / 0.75)
-        let pLine1 = easeOutCubic((time - 0.35) / 0.65)
-        let pLine2 = easeOutCubic((time - 0.75) / 0.65)
-        let pSub = easeOutCubic((time - 1.15) / 0.65)
+    // SCENE 1 (0.0s – 3.5s): Hook & Brand Reveal
+    if time < 3.7 {
+        let a = sceneAlpha(start: 0.0, end: 3.5, fadeIn: 0.45, fadeOut: 0.40)
+        let pIcon = easeOutCubic(time / 0.7)
+        let pLine1 = easeOutCubic((time - 0.3) / 0.6)
+        let pLine2 = easeOutCubic((time - 0.65) / 0.6)
+        let pSub = easeOutCubic((time - 1.0) / 0.6)
 
         cg.saveGState()
         cg.setAlpha(a)
 
-        // Centered ClaudeSYNC Icon
         let iconSz: CGFloat = 88 * (0.86 + 0.14 * CGFloat(pIcon))
         drawClaudeSyncIcon(cg, rect: CGRect(x: (w - iconSz) / 2, y: 690 - (1 - CGFloat(pIcon)) * 18, width: iconSz, height: iconSz))
 
-        // Headline
         cg.saveGState()
         cg.setAlpha(a * pLine1)
         drawText(
-            "Hit a Claude rate limit?",
+            copy.t("Claude limiti mi doldu?", "Hit a Claude rate limit?"),
             in: CGRect(x: 160, y: 560 - (1 - CGFloat(pLine1)) * 22, width: w - 320, height: 84),
             font: .systemFont(ofSize: 72, weight: .bold),
             color: Palette.textPrimary,
@@ -760,7 +840,7 @@ func drawVideoFrame(cg: CGContext, time: Double) {
         cg.saveGState()
         cg.setAlpha(a * pLine2)
         drawText(
-            "Keep your exact session.",
+            copy.t("Aynı oturumdan devam et.", "Keep your exact session."),
             in: CGRect(x: 160, y: 472 - (1 - CGFloat(pLine2)) * 22, width: w - 320, height: 84),
             font: .systemFont(ofSize: 72, weight: .bold),
             color: Palette.terracotta,
@@ -771,86 +851,31 @@ func drawVideoFrame(cg: CGContext, time: Double) {
 
         cg.saveGState()
         cg.setAlpha(a * pSub)
-        drawPill(cg, text: "INTRODUCING CLAUDESYNC FOR MACOS · OPEN SOURCE", centerX: w / 2, y: 382 - (1 - CGFloat(pSub)) * 12, height: 38, fontSize: 13)
-        cg.restoreGState()
-
-        cg.restoreGState()
-    }
-
-    // ------------------------------------------------------------------
-    // SCENE 2 (3.5s – 8.2s): Full Desktop App Reveal (Sessions)
-    // ------------------------------------------------------------------
-    if time >= 3.4 && time < 8.4 {
-        let local = time - 3.5
-        let a = sceneAlpha(start: 3.5, end: 8.2, fadeIn: 0.55, fadeOut: 0.45)
-        let enter = easeOutCubic(local / 0.85)
-        let slowScale = 0.96 + 0.04 * CGFloat(enter) + 0.012 * CGFloat(clamp01(local / 4.7))
-
-        cg.saveGState()
-        cg.setAlpha(a)
-
-        drawPill(cg, text: "01 · NATIVE MACOS DESKTOP APP", centerX: w / 2, y: 982, height: 30, textColor: Palette.terracotta, fontSize: 12)
-        drawText(
-            "Every session, synced across both accounts.",
-            in: CGRect(x: 160, y: 908, width: w - 320, height: 60),
-            font: .systemFont(ofSize: 46, weight: .bold),
-            color: Palette.textPrimary,
-            alignment: .center,
-            kern: -1.2
+        drawPill(
+            cg,
+            text: copy.t("MACOS İÇİN CLAUDESYNC · AÇIK KAYNAK · TR & EN", "INTRODUCING CLAUDESYNC FOR MACOS · OPEN SOURCE · EN & TR"),
+            centerX: w / 2,
+            y: 382 - (1 - CGFloat(pSub)) * 12,
+            height: 38,
+            fontSize: 13
         )
-
-        let baseW: CGFloat = 1120 * slowScale
-        let baseH: CGFloat = baseW * (CGFloat(winMainDark.height) / CGFloat(winMainDark.width))
-        let yOffset = (1 - CGFloat(enter)) * 50
-        let rect = CGRect(x: (w - baseW) / 2, y: 868 - baseH - yOffset, width: baseW, height: baseH)
-        drawClippedImage(cg, image: winMainDark, in: rect, radius: 18, borderColor: Palette.hairlineStrong, borderWidth: 1.5)
+        cg.restoreGState()
         cg.restoreGState()
     }
 
-    // ------------------------------------------------------------------
-    // SCENE 3 (7.9s – 12.2s): Live Limits & Auto-Failover
-    // ------------------------------------------------------------------
-    if time >= 7.8 && time < 12.4 {
-        let local = time - 7.9
-        let a = sceneAlpha(start: 7.9, end: 12.2, fadeIn: 0.5, fadeOut: 0.45)
-        let enter = easeOutCubic(local / 0.8)
-        let drift = CGFloat(clamp01(local / 4.3))
-
-        cg.saveGState()
-        cg.setAlpha(a)
-
-        drawPill(cg, text: "02 · REAL-TIME LIMITS & AUTO FAILOVER", centerX: w / 2, y: 982, height: 30, textColor: Palette.terracotta, fontSize: 12)
-        drawText(
-            "Live 5h / 7d gauges, reset countdowns, automatic switch on 429.",
-            in: CGRect(x: 120, y: 908, width: w - 240, height: 60),
-            font: .systemFont(ofSize: 42, weight: .bold),
-            color: Palette.textPrimary,
-            alignment: .center,
-            kern: -1.0
-        )
-
-        let baseW: CGFloat = 1120 * (0.97 + 0.03 * CGFloat(enter) + 0.015 * drift)
-        let baseH: CGFloat = baseW * (CGFloat(winLimitsDark.height) / CGFloat(winLimitsDark.width))
-        let rect = CGRect(x: (w - baseW) / 2, y: 868 - baseH - (1 - CGFloat(enter)) * 36, width: baseW, height: baseH)
-        drawClippedImage(cg, image: winLimitsDark, in: rect, radius: 18, borderColor: Palette.hairlineStrong, borderWidth: 1.5)
-        cg.restoreGState()
-    }
-
-    // ------------------------------------------------------------------
-    // SCENE 4 (11.9s – 15.6s): Zero-Logout Dual Profiles
-    // ------------------------------------------------------------------
-    if time >= 11.8 && time < 15.8 {
-        let local = time - 11.9
-        let a = sceneAlpha(start: 11.9, end: 15.6, fadeIn: 0.5, fadeOut: 0.45)
+    // SCENE 2 (3.2s – 6.9s): First-Launch Setup Wizard & Permissions
+    if time >= 3.1 && time < 7.1 {
+        let local = time - 3.2
+        let a = sceneAlpha(start: 3.2, end: 6.9, fadeIn: 0.45, fadeOut: 0.40)
         let enter = easeOutCubic(local / 0.75)
 
         cg.saveGState()
         cg.setAlpha(a)
 
-        drawPill(cg, text: "03 · ZERO-LOGOUT DUAL PROFILES (--user-data-dir)", centerX: w / 2, y: 982, height: 30, textColor: Palette.terracotta, fontSize: 12)
+        drawPill(cg, text: copy.t("01 · İLK KURULUM SİHİRBAZI & İZİN KONTROLÜ", "01 · GUIDED SETUP WIZARD & PERMISSIONS"), centerX: w / 2, y: 982, height: 30, textColor: Palette.terracotta, fontSize: 12)
         drawText(
-            "Stay signed into both Ultra accounts. Switch in one click.",
-            in: CGRect(x: 140, y: 908, width: w - 280, height: 60),
+            copy.t("Türkçe & İngilizce. Şeffaf yerel izin doğrulaması.", "Bilingual EN & TR. Zero invasive permissions."),
+            in: CGRect(x: 120, y: 908, width: w - 240, height: 60),
             font: .systemFont(ofSize: 44, weight: .bold),
             color: Palette.textPrimary,
             alignment: .center,
@@ -858,56 +883,131 @@ func drawVideoFrame(cg: CGContext, time: Double) {
         )
 
         let baseW: CGFloat = 1120 * (0.97 + 0.03 * CGFloat(enter))
-        let baseH: CGFloat = baseW * (CGFloat(winProfilesDark.height) / CGFloat(winProfilesDark.width))
+        let baseH: CGFloat = baseW * (CGFloat(assets.winOnboardingPerms.height) / CGFloat(assets.winOnboardingPerms.width))
         let rect = CGRect(x: (w - baseW) / 2, y: 868 - baseH - (1 - CGFloat(enter)) * 36, width: baseW, height: baseH)
-        drawClippedImage(cg, image: winProfilesDark, in: rect, radius: 18, borderColor: Palette.hairlineStrong, borderWidth: 1.5)
+        drawClippedImage(cg, image: assets.winOnboardingPerms, in: rect, radius: 18, borderColor: Palette.hairlineStrong, borderWidth: 1.5)
         cg.restoreGState()
     }
 
-    // ------------------------------------------------------------------
-    // SCENE 5 (15.3s – 18.9s): Retina Menu Bar Bars + Light Mode Split
-    // ------------------------------------------------------------------
-    if time >= 15.2 && time < 19.1 {
-        let local = time - 15.3
-        let a = sceneAlpha(start: 15.3, end: 18.9, fadeIn: 0.5, fadeOut: 0.45)
+    // SCENE 3 (6.6s – 10.7s): Full Desktop App (Sessions Workspace)
+    if time >= 6.5 && time < 10.9 {
+        let local = time - 6.6
+        let a = sceneAlpha(start: 6.6, end: 10.7, fadeIn: 0.45, fadeOut: 0.40)
+        let enter = easeOutCubic(local / 0.80)
+        let slowScale = 0.96 + 0.04 * CGFloat(enter) + 0.012 * CGFloat(clamp01(local / 4.1))
+
+        cg.saveGState()
+        cg.setAlpha(a)
+
+        drawPill(cg, text: copy.t("02 · NATIVE MACOS MASAÜSTÜ UYGULAMASI", "02 · NATIVE MACOS DESKTOP APP"), centerX: w / 2, y: 982, height: 30, textColor: Palette.terracotta, fontSize: 12)
+        drawText(
+            copy.t("Tüm oturumlar iki hesap arasında anlık eşit.", "Every session, synced across both accounts."),
+            in: CGRect(x: 140, y: 908, width: w - 280, height: 60),
+            font: .systemFont(ofSize: 46, weight: .bold),
+            color: Palette.textPrimary,
+            alignment: .center,
+            kern: -1.2
+        )
+
+        let baseW: CGFloat = 1120 * slowScale
+        let baseH: CGFloat = baseW * (CGFloat(assets.winMainDark.height) / CGFloat(assets.winMainDark.width))
+        let rect = CGRect(x: (w - baseW) / 2, y: 868 - baseH - (1 - CGFloat(enter)) * 42, width: baseW, height: baseH)
+        drawClippedImage(cg, image: assets.winMainDark, in: rect, radius: 18, borderColor: Palette.hairlineStrong, borderWidth: 1.5)
+        cg.restoreGState()
+    }
+
+    // SCENE 4 (10.4s – 14.3s): Live Limits & Auto-Failover
+    if time >= 10.3 && time < 14.5 {
+        let local = time - 10.4
+        let a = sceneAlpha(start: 10.4, end: 14.3, fadeIn: 0.45, fadeOut: 0.40)
+        let enter = easeOutCubic(local / 0.75)
+        let drift = CGFloat(clamp01(local / 3.9))
+
+        cg.saveGState()
+        cg.setAlpha(a)
+
+        drawPill(cg, text: copy.t("03 · CANLI LİMİTLER & OTOMATİK GEÇİŞ", "03 · REAL-TIME LIMITS & AUTO FAILOVER"), centerX: w / 2, y: 982, height: 30, textColor: Palette.terracotta, fontSize: 12)
+        drawText(
+            copy.t("Canlı 5s / 7g göstergeleri, geri sayım ve 429'da oto geçiş.", "Live 5h / 7d gauges, reset countdowns, automatic switch on 429."),
+            in: CGRect(x: 100, y: 908, width: w - 200, height: 60),
+            font: .systemFont(ofSize: 41, weight: .bold),
+            color: Palette.textPrimary,
+            alignment: .center,
+            kern: -1.0
+        )
+
+        let baseW: CGFloat = 1120 * (0.97 + 0.03 * CGFloat(enter) + 0.015 * drift)
+        let baseH: CGFloat = baseW * (CGFloat(assets.winLimitsDark.height) / CGFloat(assets.winLimitsDark.width))
+        let rect = CGRect(x: (w - baseW) / 2, y: 868 - baseH - (1 - CGFloat(enter)) * 36, width: baseW, height: baseH)
+        drawClippedImage(cg, image: assets.winLimitsDark, in: rect, radius: 18, borderColor: Palette.hairlineStrong, borderWidth: 1.5)
+        cg.restoreGState()
+    }
+
+    // SCENE 5 (14.0s – 17.7s): Zero-Logout Dual Profiles
+    if time >= 13.9 && time < 17.9 {
+        let local = time - 14.0
+        let a = sceneAlpha(start: 14.0, end: 17.7, fadeIn: 0.45, fadeOut: 0.40)
         let enter = easeOutCubic(local / 0.75)
 
         cg.saveGState()
         cg.setAlpha(a)
 
-        drawPill(cg, text: "04 · RETINA MENU BAR BARS & LIGHT MODE", centerX: w / 2, y: 982, height: 30, textColor: Palette.terracotta, fontSize: 12)
+        drawPill(cg, text: copy.t("04 · ÇIKIŞSIZ ÇİFT PROFİL (--user-data-dir)", "04 · ZERO-LOGOUT DUAL PROFILES (--user-data-dir)"), centerX: w / 2, y: 982, height: 30, textColor: Palette.terracotta, fontSize: 12)
         drawText(
-            "Glanceable top-bar limits. Toggle menu bar ON or OFF anytime.",
-            in: CGRect(x: 140, y: 908, width: w - 280, height: 60),
+            copy.t("İki Ultra hesapta birden girişli kal. Tek tıkla geç.", "Stay signed into both Ultra accounts. Switch in one click."),
+            in: CGRect(x: 120, y: 908, width: w - 240, height: 60),
             font: .systemFont(ofSize: 44, weight: .bold),
             color: Palette.textPrimary,
             alignment: .center,
             kern: -1.1
         )
 
-        // Symmetric 2-card composition: Left Menu Bar Bars Showcase | Right Light Mode App
+        let baseW: CGFloat = 1120 * (0.97 + 0.03 * CGFloat(enter))
+        let baseH: CGFloat = baseW * (CGFloat(assets.winProfilesDark.height) / CGFloat(assets.winProfilesDark.width))
+        let rect = CGRect(x: (w - baseW) / 2, y: 868 - baseH - (1 - CGFloat(enter)) * 36, width: baseW, height: baseH)
+        drawClippedImage(cg, image: assets.winProfilesDark, in: rect, radius: 18, borderColor: Palette.hairlineStrong, borderWidth: 1.5)
+        cg.restoreGState()
+    }
+
+    // SCENE 6 (17.4s – 21.4s): Retina Menu Bar Bars + Light Mode
+    if time >= 17.3 && time < 21.6 {
+        let local = time - 17.4
+        let a = sceneAlpha(start: 17.4, end: 21.4, fadeIn: 0.45, fadeOut: 0.40)
+        let enter = easeOutCubic(local / 0.75)
+
+        cg.saveGState()
+        cg.setAlpha(a)
+
+        drawPill(cg, text: copy.t("05 · RETİNA ÜST BAR & AÇIK TEMA", "05 · RETINA MENU BAR BARS & LIGHT MODE"), centerX: w / 2, y: 982, height: 30, textColor: Palette.terracotta, fontSize: 12)
+        drawText(
+            copy.t("Üst barda canlı limit barları. İstediğin an aç veya kapat.", "Glanceable top-bar limits. Toggle menu bar ON or OFF anytime."),
+            in: CGRect(x: 120, y: 908, width: w - 240, height: 60),
+            font: .systemFont(ofSize: 43, weight: .bold),
+            color: Palette.textPrimary,
+            alignment: .center,
+            kern: -1.1
+        )
+
         let yBase: CGFloat = 148 - (1 - CGFloat(enter)) * 30
         let leftCard = CGRect(x: 110, y: yBase, width: 740, height: 700)
         let rightCard = CGRect(x: 890, y: yBase, width: 920, height: 700)
 
         fillRoundedRect(cg, rect: leftCard, radius: 18, fill: Palette.cardBg, stroke: Palette.hairlineStrong, lineWidth: 1.2)
-        let mbAspect = CGFloat(imgMenuBarBars.width) / CGFloat(imgMenuBarBars.height)
+        let mbAspect = CGFloat(assets.imgMenuBarBars.width) / CGFloat(assets.imgMenuBarBars.height)
         let mbW = leftCard.width - 56
         let mbH = mbW / mbAspect
-        drawClippedImage(cg, image: imgMenuBarBars, in: CGRect(x: leftCard.midX - mbW / 2, y: leftCard.midY - mbH / 2, width: mbW, height: mbH), radius: 14)
+        drawClippedImage(cg, image: assets.imgMenuBarBars, in: CGRect(x: leftCard.midX - mbW / 2, y: leftCard.midY - mbH / 2, width: mbW, height: mbH), radius: 14)
 
-        let lAspect = CGFloat(winMainLight.width) / CGFloat(winMainLight.height)
+        let lAspect = CGFloat(assets.winMainLight.width) / CGFloat(assets.winMainLight.height)
         let lW = rightCard.width
         let lH = lW / lAspect
-        drawClippedImage(cg, image: winMainLight, in: CGRect(x: rightCard.minX, y: rightCard.midY - lH / 2, width: lW, height: lH), radius: 18, borderColor: Palette.hairlineStrong, borderWidth: 1.5)
+        drawClippedImage(cg, image: assets.winMainLight, in: CGRect(x: rightCard.minX, y: rightCard.midY - lH / 2, width: lW, height: lH), radius: 18, borderColor: Palette.hairlineStrong, borderWidth: 1.5)
         cg.restoreGState()
     }
 
-    // ------------------------------------------------------------------
-    // SCENE 6 (18.6s – 22.0s): Open-Source Outro CTA
-    // ------------------------------------------------------------------
-    if time >= 18.5 {
-        let local = time - 18.6
+    // SCENE 7 (21.1s – 25.0s): Outro CTA
+    if time >= 21.0 {
+        let local = time - 21.1
         let a = easeOutCubic(local / 0.55)
         let rise = (1 - CGFloat(a)) * 24
 
@@ -927,7 +1027,7 @@ func drawVideoFrame(cg: CGContext, time: Double) {
         )
 
         drawText(
-            "100% Local · Zero Telemetry · MIT Open Source",
+            copy.t("%100 Yerel · Sıfır Telemetri · MIT Açık Kaynak", "100% Local · Zero Telemetry · MIT Open Source"),
             in: CGRect(x: 200, y: 484 - rise, width: w - 400, height: 38),
             font: .systemFont(ofSize: 24, weight: .medium),
             color: Palette.textSecondary,
@@ -947,8 +1047,8 @@ func drawVideoFrame(cg: CGContext, time: Double) {
         )
 
         drawText(
-            "macOS 14+ · Native SwiftUI & AppKit · 1.3 MB DMG",
-            in: CGRect(x: 200, y: 316 - rise, width: w - 400, height: 28),
+            copy.t("macOS 14+ · Native SwiftUI & AppKit · Türkçe & English · 1.3 MB DMG", "macOS 14+ · Native SwiftUI & AppKit · English & Turkish · 1.3 MB DMG"),
+            in: CGRect(x: 120, y: 316 - rise, width: w - 240, height: 28),
             font: .monospacedSystemFont(ofSize: 15, weight: .medium),
             color: Palette.textTertiary,
             alignment: .center
@@ -958,14 +1058,14 @@ func drawVideoFrame(cg: CGContext, time: Double) {
     }
 }
 
-func generateLaunchVideo() throws {
-    let mp4URL = videoOutURL.appendingPathComponent("ClaudeSYNC-Launch-1080p60.mp4")
+func generateLaunchVideo(copy: KitCopy, assets: LangAssets, mp4URL: URL, keyframesDir: URL) throws {
     try? FileManager.default.removeItem(at: mp4URL)
+    try FileManager.default.createDirectory(at: keyframesDir, withIntermediateDirectories: true)
 
     let width = 1920
     let height = 1080
     let fps: Int32 = 60
-    let durationSec = 22.0
+    let durationSec = 25.0
     let totalFrames = Int(durationSec * Double(fps))
 
     let writer = try AVAssetWriter(outputURL: mp4URL, fileType: .mp4)
@@ -998,12 +1098,13 @@ func generateLaunchVideo() throws {
     writer.startSession(atSourceTime: .zero)
 
     let keyframeTimes: [Int: String] = [
-        Int(1.9 * 60): "kf-01-hook.png",
-        Int(5.5 * 60): "kf-02-app.png",
-        Int(9.8 * 60): "kf-03-limits.png",
-        Int(13.6 * 60): "kf-04-profiles.png",
-        Int(17.1 * 60): "kf-05-menubar-light.png",
-        Int(20.6 * 60): "kf-06-outro.png"
+        Int(1.8 * 60): "kf-01-hook.png",
+        Int(5.0 * 60): "kf-02-onboarding.png",
+        Int(8.6 * 60): "kf-03-app.png",
+        Int(12.3 * 60): "kf-04-limits.png",
+        Int(15.8 * 60): "kf-05-profiles.png",
+        Int(19.4 * 60): "kf-06-menubar-light.png",
+        Int(23.2 * 60): "kf-07-outro.png"
     ]
 
     let colorSpace = CGColorSpaceCreateDeviceRGB()
@@ -1039,14 +1140,14 @@ func generateLaunchVideo() throws {
             cg.setShouldAntialias(true)
 
             let t = Double(frameIdx) / Double(fps)
-            drawVideoFrame(cg: cg, time: t)
+            drawVideoFrame(cg: cg, time: t, copy: copy, assets: assets)
 
             NSGraphicsContext.restoreGraphicsState()
 
             if let kfName = keyframeTimes[frameIdx], let cgSnap = cg.makeImage() {
                 let rep = NSBitmapImageRep(cgImage: cgSnap)
                 if let png = rep.representation(using: .png, properties: [:]) {
-                    try? png.write(to: keyframesOutURL.appendingPathComponent(kfName))
+                    try? png.write(to: keyframesDir.appendingPathComponent(kfName))
                 }
             }
 
@@ -1057,27 +1158,86 @@ func generateLaunchVideo() throws {
 
     input.markAsFinished()
     let sem = DispatchSemaphore(value: 0)
-    writer.finishWriting {
-        sem.signal()
-    }
+    writer.finishWriting { sem.signal() }
     sem.wait()
 
     if writer.status != .completed {
         fatalError("AVAssetWriter failed: \(String(describing: writer.error))")
     }
-    print("Saved \(mp4URL.lastPathComponent) (1920x1080 @ 60fps, \(totalFrames) frames)")
+    print("Saved \(mp4URL.path) (1920x1080 @ 60fps, \(totalFrames) frames)")
 }
 
-// MARK: - Run All Generators
+// MARK: - Main Entry Point
 
-print("==> Generating ClaudeSYNC Launch Visuals...")
-try generateHeroBanner()
-try generateFeatureBento()
-try generateArchitectureVisual()
-try generateDarkLightShowcase()
+let rootURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+let docsAssetsURL = rootURL.appendingPathComponent("docs/assets", isDirectory: true)
+let launchKitURL = rootURL.appendingPathComponent("launch-kit", isDirectory: true)
 
-if !CommandLine.arguments.contains("--visuals-only") {
-    print("==> Rendering 1080p60 Launch Promo Video (AVAssetWriter H.264)...")
-    try generateLaunchVideo()
+let args = CommandLine.arguments
+let visualsOnly = args.contains("--visuals-only")
+let langsToBuild: [KitLang] = {
+    if args.contains("--lang=en") { return [.en] }
+    if args.contains("--lang=tr") { return [.tr] }
+    return [.en, .tr]
+}()
+
+for lang in langsToBuild {
+    let copy = KitCopy(lang: lang)
+    let rawDir = (lang == .en)
+        ? docsAssetsURL
+        : launchKitURL.appendingPathComponent("tr/raw", isDirectory: true)
+    let langOut = launchKitURL.appendingPathComponent(lang.rawValue, isDirectory: true)
+    let visualsDir = langOut.appendingPathComponent("visuals", isDirectory: true)
+    let videoDir = langOut.appendingPathComponent("video", isDirectory: true)
+    let keyframesDir = videoDir.appendingPathComponent("keyframes", isDirectory: true)
+
+    try FileManager.default.createDirectory(at: visualsDir, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: videoDir, withIntermediateDirectories: true)
+
+    print("==> [\(lang.upper)] Loading Retina UI snapshots from \(rawDir.path)...")
+    let assets = LangAssets.load(from: rawDir)
+
+    let isEN = (lang == .en)
+    print("==> [\(lang.upper)] Generating 5 Launch Visuals...")
+    try generateHeroBanner(
+        copy: copy,
+        assets: assets,
+        outURL: visualsDir.appendingPathComponent("01-hero-banner-\(lang.suffix).png"),
+        docsCopyURL: isEN ? docsAssetsURL.appendingPathComponent("hero-banner.png") : nil
+    )
+    try generateFeatureBento(
+        copy: copy,
+        assets: assets,
+        outURL: visualsDir.appendingPathComponent("02-bento-features-\(lang.suffix).png"),
+        docsCopyURL: isEN ? docsAssetsURL.appendingPathComponent("features-bento.png") : nil
+    )
+    try generateArchitectureVisual(
+        copy: copy,
+        outURL: visualsDir.appendingPathComponent("03-architecture-\(lang.suffix).png"),
+        docsCopyURL: isEN ? docsAssetsURL.appendingPathComponent("architecture.png") : nil
+    )
+    try generateDarkLightShowcase(
+        copy: copy,
+        assets: assets,
+        outURL: visualsDir.appendingPathComponent("04-dark-light-split-\(lang.suffix).png"),
+        docsCopyURL: isEN ? docsAssetsURL.appendingPathComponent("dark-light-split.png") : nil
+    )
+    try generateOnboardingShowcase(
+        copy: copy,
+        assets: assets,
+        outURL: visualsDir.appendingPathComponent("05-onboarding-\(lang.suffix).png"),
+        docsCopyURL: isEN ? docsAssetsURL.appendingPathComponent("onboarding-showcase.png") : nil
+    )
+
+    if !visualsOnly {
+        print("==> [\(lang.upper)] Rendering 1080p60 Launch Video...")
+        try generateLaunchVideo(
+            copy: copy,
+            assets: assets,
+            mp4URL: videoDir.appendingPathComponent("ClaudeSYNC-Launch-\(lang.upper)-1080p60.mp4"),
+            keyframesDir: keyframesDir
+        )
+    }
 }
-print("==> Launch Kit complete!")
+
+print("==> Bilingual Launch Kit (EN + TR) complete!")

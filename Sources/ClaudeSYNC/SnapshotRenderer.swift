@@ -12,26 +12,33 @@ enum SnapshotRenderer {
             return false
         }
         let outputDir = URL(fileURLWithPath: args[idx + 1], isDirectory: true)
+        let isTurkish: Bool = {
+            if args.contains("--lang=tr") { return true }
+            if args.contains("--lang=en") { return false }
+            return false
+        }()
+
         Task { @MainActor in
             if isDemo {
-                viewModel.loadSyntheticDemoData()
+                viewModel.loadSyntheticDemoData(isTurkish: isTurkish)
             } else {
                 for _ in 0..<30 {
                     if !viewModel.isRefreshing && viewModel.lastRefreshedAt != nil { break }
                     try? await Task.sleep(nanoseconds: 100_000_000)
                 }
             }
-            await captureAll(viewModel: viewModel, outputDir: outputDir, isDemo: isDemo)
+            await captureAll(viewModel: viewModel, outputDir: outputDir, isTurkish: isTurkish)
             fflush(stdout)
             exit(0)
         }
         return true
     }
 
-    private static func captureAll(viewModel: AppViewModel, outputDir: URL, isDemo: Bool) async {
+    private static func captureAll(viewModel: AppViewModel, outputDir: URL, isTurkish: Bool) async {
         try? FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
 
         // 1. Full Standalone Desktop App Windows (920 × 650)
+        viewModel.isShowingOnboarding = false
         let mainSpecs: [(MainAppSection, NSAppearance.Name, String)] = [
             (.sessions, .darkAqua, "app-main-dark.png"),
             (.limits, .darkAqua, "app-limits-dark.png"),
@@ -55,7 +62,24 @@ enum SnapshotRenderer {
             print("Saved \(filename)")
         }
 
-        // 2. Compact Menu Bar Popover (512 × 688)
+        // 2. Onboarding Setup Wizard Screenshots (Welcome & Permissions steps)
+        viewModel.isShowingOnboarding = true
+        for (step, filename) in [(OnboardingStep.welcome, "app-onboarding-welcome-dark.png"), (OnboardingStep.permissions, "app-onboarding-permissions-dark.png")] {
+            viewModel.onboardingStep = step
+            await renderWindow(
+                content: MainWindowView(viewModel: viewModel, useNativeGlassBackdrop: false, includeTrafficLightInset: true),
+                width: 920,
+                height: 650,
+                appearanceName: .darkAqua,
+                isDark: true,
+                showTrafficLights: true,
+                to: outputDir.appendingPathComponent(filename)
+            )
+            print("Saved \(filename)")
+        }
+        viewModel.isShowingOnboarding = false
+
+        // 3. Compact Menu Bar Popover (512 × 688)
         viewModel.activeTab = .sessions
         await renderWindow(
             content: MenuBarContentView(viewModel: viewModel, useNativeGlassBackdrop: false),
@@ -68,9 +92,10 @@ enum SnapshotRenderer {
         )
         print("Saved menubar-popover-dark.png")
 
-        // 3. Menu Bar Limit Bars & Icon Showcase
+        // 4. Menu Bar Limit Bars & Icon Showcase
         await renderMenuBarShowcase(
             viewModel: viewModel,
+            isTurkish: isTurkish,
             to: outputDir.appendingPathComponent("menubar-bars.png")
         )
         print("Saved menubar-bars.png")
@@ -93,7 +118,6 @@ enum SnapshotRenderer {
         let canvasH = height + pad * 2
 
         let previewRoot = ZStack {
-            // Subtle neutral macOS studio backdrop
             Color(
                 red: isDark ? 0.08 : 0.87,
                 green: isDark ? 0.09 : 0.89,
@@ -169,12 +193,13 @@ enum SnapshotRenderer {
         window.close()
     }
 
-    private static func renderMenuBarShowcase(viewModel: AppViewModel, to fileURL: URL) async {
+    private static func renderMenuBarShowcase(viewModel: AppViewModel, isTurkish: Bool, to fileURL: URL) async {
         let darkDual = MenuBarWidgetRenderer.shared.image(
             mode: .iconAndBothAccounts,
             accounts: viewModel.accounts,
             activeAccount: viewModel.activeAccount,
             isSwitching: false,
+            isTurkish: isTurkish,
             overrideDark: true
         )
         let darkActive = MenuBarWidgetRenderer.shared.image(
@@ -182,6 +207,7 @@ enum SnapshotRenderer {
             accounts: viewModel.accounts,
             activeAccount: viewModel.activeAccount,
             isSwitching: false,
+            isTurkish: isTurkish,
             overrideDark: true
         )
         let lightDual = MenuBarWidgetRenderer.shared.image(
@@ -189,8 +215,10 @@ enum SnapshotRenderer {
             accounts: viewModel.accounts,
             activeAccount: viewModel.activeAccount,
             isSwitching: false,
+            isTurkish: isTurkish,
             overrideDark: false
         )
+        let clockStr = isTurkish ? "Cum 12:48" : "Fri 12:48"
 
         let showcase = VStack(spacing: 18) {
             HStack(spacing: 16) {
@@ -199,7 +227,7 @@ enum SnapshotRenderer {
                     Text("ClaudeSYNC")
                         .font(.system(size: 20, weight: .bold))
                         .foregroundStyle(.white)
-                    Text("macOS Menu Bar Limit Bars & Icon")
+                    Text(isTurkish ? "macOS Üst Bar Limit Barları & İkon" : "macOS Menu Bar Limit Bars & Icon")
                         .font(.system(size: 12))
                         .foregroundStyle(.white.opacity(0.65))
                 }
@@ -207,7 +235,7 @@ enum SnapshotRenderer {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("DARK MENU BAR · DUAL ACCOUNT BARS (2x)")
+                Text(isTurkish ? "KOYU ÜST BAR · İKİ HESAP BAR (2x)" : "DARK MENU BAR · DUAL ACCOUNT BARS (2x)")
                     .font(.system(size: 9.5, weight: .bold))
                     .foregroundStyle(.white.opacity(0.5))
                 HStack(spacing: 14) {
@@ -216,7 +244,7 @@ enum SnapshotRenderer {
                         .interpolation(.high)
                         .scaleEffect(2.0)
                         .frame(width: darkDual.size.width * 2, height: darkDual.size.height * 2)
-                    Text("Fri 12:48")
+                    Text(clockStr)
                         .font(.system(size: 18, weight: .medium))
                         .foregroundStyle(.white.opacity(0.88))
                 }
@@ -226,7 +254,7 @@ enum SnapshotRenderer {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("DARK MENU BAR · ACTIVE 5h / 7d BARS (2x)")
+                Text(isTurkish ? "KOYU ÜST BAR · AKTİF 5s / 7g BAR (2x)" : "DARK MENU BAR · ACTIVE 5h / 7d BARS (2x)")
                     .font(.system(size: 9.5, weight: .bold))
                     .foregroundStyle(.white.opacity(0.5))
                 HStack(spacing: 14) {
@@ -235,7 +263,7 @@ enum SnapshotRenderer {
                         .interpolation(.high)
                         .scaleEffect(2.0)
                         .frame(width: darkActive.size.width * 2, height: darkActive.size.height * 2)
-                    Text("Fri 12:48")
+                    Text(clockStr)
                         .font(.system(size: 18, weight: .medium))
                         .foregroundStyle(.white.opacity(0.88))
                 }
@@ -245,7 +273,7 @@ enum SnapshotRenderer {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("LIGHT MENU BAR · DUAL ACCOUNT BARS (2x)")
+                Text(isTurkish ? "AÇIK ÜST BAR · İKİ HESAP BAR (2x)" : "LIGHT MENU BAR · DUAL ACCOUNT BARS (2x)")
                     .font(.system(size: 9.5, weight: .bold))
                     .foregroundStyle(.white.opacity(0.5))
                 HStack(spacing: 14) {
@@ -254,7 +282,7 @@ enum SnapshotRenderer {
                         .interpolation(.high)
                         .scaleEffect(2.0)
                         .frame(width: lightDual.size.width * 2, height: lightDual.size.height * 2)
-                    Text("Fri 12:48")
+                    Text(clockStr)
                         .font(.system(size: 18, weight: .medium))
                         .foregroundStyle(.black.opacity(0.85))
                 }

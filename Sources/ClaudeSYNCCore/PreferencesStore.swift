@@ -19,6 +19,8 @@ public struct BridgeSettings: Codable, Equatable, Sendable {
     public var keepRunningInMenuBarOnClose: Bool
     public var menuBarDisplayMode: MenuBarDisplayMode
     public var lastAutoSwitchEventKey: String?
+    public var language: AppLanguage
+    public var hasCompletedOnboarding: Bool
 
     public init(
         accountNicknames: [String: String] = [:],
@@ -38,7 +40,9 @@ public struct BridgeSettings: Codable, Equatable, Sendable {
         showMenuBarExtra: Bool = true,
         keepRunningInMenuBarOnClose: Bool = true,
         menuBarDisplayMode: MenuBarDisplayMode = .iconAndBothAccounts,
-        lastAutoSwitchEventKey: String? = nil
+        lastAutoSwitchEventKey: String? = nil,
+        language: AppLanguage = .system,
+        hasCompletedOnboarding: Bool = false
     ) {
         self.accountNicknames = accountNicknames
         self.secondaryProfiles = secondaryProfiles
@@ -58,6 +62,8 @@ public struct BridgeSettings: Codable, Equatable, Sendable {
         self.keepRunningInMenuBarOnClose = keepRunningInMenuBarOnClose
         self.menuBarDisplayMode = menuBarDisplayMode
         self.lastAutoSwitchEventKey = lastAutoSwitchEventKey
+        self.language = language
+        self.hasCompletedOnboarding = hasCompletedOnboarding
     }
 
     public init(from decoder: Decoder) throws {
@@ -80,6 +86,8 @@ public struct BridgeSettings: Codable, Equatable, Sendable {
         keepRunningInMenuBarOnClose = try c.decodeIfPresent(Bool.self, forKey: .keepRunningInMenuBarOnClose) ?? true
         menuBarDisplayMode = try c.decodeIfPresent(MenuBarDisplayMode.self, forKey: .menuBarDisplayMode) ?? .iconAndBothAccounts
         lastAutoSwitchEventKey = try c.decodeIfPresent(String.self, forKey: .lastAutoSwitchEventKey)
+        language = try c.decodeIfPresent(AppLanguage.self, forKey: .language) ?? .system
+        hasCompletedOnboarding = try c.decodeIfPresent(Bool.self, forKey: .hasCompletedOnboarding) ?? false
     }
 
     public var transferOptions: TransferOptions {

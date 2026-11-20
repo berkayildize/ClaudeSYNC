@@ -7,6 +7,7 @@ struct SessionsWorkspaceView: View {
     @State private var swapRotation: Double = 0
 
     private var hPad: CGFloat { isWideLayout ? 16 : BridgeTheme.hPad }
+    private var l10n: L10n { viewModel.l10n }
 
     var body: some View {
         VStack(spacing: isWideLayout ? 12 : 10) {
@@ -40,12 +41,12 @@ struct SessionsWorkspaceView: View {
         ZStack {
             HStack(spacing: 12) {
                 symmetricAccountCard(
-                    role: "KAYNAK",
+                    role: l10n.t("KAYNAK", "SOURCE"),
                     account: viewModel.sourceAccount,
                     isSource: true
                 )
                 symmetricAccountCard(
-                    role: "HEDEF",
+                    role: l10n.t("HEDEF", "TARGET"),
                     account: viewModel.targetAccount,
                     isSource: false
                 )
@@ -67,7 +68,7 @@ struct SessionsWorkspaceView: View {
             }
             .buttonStyle(TactileScaleButtonStyle())
             .disabled(viewModel.accounts.count < 2)
-            .help("Kaynak ve hedef hesabı değiştir")
+            .help(l10n.t("Kaynak ve hedef hesabı değiştir", "Swap source and target accounts"))
         }
     }
 
@@ -96,13 +97,17 @@ struct SessionsWorkspaceView: View {
                             size: 5.5,
                             isPulsing: acc.isActiveAccount
                         )
-                        Text(isExhausted ? "Limit Dolu" : (acc.isActiveAccount ? "Aktif" : "Hazır"))
-                            .font(.system(size: 9.5, weight: .semibold))
-                            .foregroundStyle(
-                                isExhausted
-                                    ? Color(nsColor: .systemRed)
-                                    : (acc.isActiveAccount ? Color(nsColor: .systemGreen) : .secondary)
-                            )
+                        Text(
+                            isExhausted
+                                ? l10n.t("Limit Dolu", "Limit Hit")
+                                : (acc.isActiveAccount ? l10n.t("Aktif", "Active") : l10n.t("Hazır", "Ready"))
+                        )
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(
+                            isExhausted
+                                ? Color(nsColor: .systemRed)
+                                : (acc.isActiveAccount ? Color(nsColor: .systemGreen) : .secondary)
+                        )
                     }
                 }
             }
@@ -118,7 +123,12 @@ struct SessionsWorkspaceView: View {
                                     viewModel.selectTarget(option.id)
                                 }
                             } label: {
-                                Text("\(option.displayName) (\(option.activeSessions.count) aktif)")
+                                Text(
+                                    l10n.t(
+                                        "\(option.displayName) (\(option.activeSessions.count) aktif)",
+                                        "\(option.displayName) (\(option.activeSessions.count) active)"
+                                    )
+                                )
                             }
                         }
                     } label: {
@@ -139,7 +149,7 @@ struct SessionsWorkspaceView: View {
                             .font(.system(size: 12.5, weight: .semibold))
                             .lineLimit(1)
                         Spacer(minLength: 2)
-                        Text(acc.profileName)
+                        Text(l10n.profileDisplayName(acc.profileName, isDefault: acc.isDefaultProfile))
                             .font(.system(size: 9, weight: .medium))
                             .foregroundStyle(.tertiary)
                             .lineLimit(1)
@@ -150,14 +160,14 @@ struct SessionsWorkspaceView: View {
                     Spacer(minLength: 0)
                     AnimatedCircularGauge(
                         percent: acc.usage?.fiveHourPercent,
-                        title: "5 Saat",
+                        title: l10n.t("5 Saat", "5 Hours"),
                         diameter: isWideLayout ? 48 : 42,
                         lineWidth: 4.25
                     )
                     Spacer(minLength: isWideLayout ? 24 : 16)
                     AnimatedCircularGauge(
                         percent: acc.usage?.sevenDayPercent,
-                        title: "7 Gün",
+                        title: l10n.t("7 Gün", "7 Days"),
                         diameter: isWideLayout ? 48 : 42,
                         lineWidth: 4.25
                     )
@@ -165,21 +175,26 @@ struct SessionsWorkspaceView: View {
                 }
 
                 HStack(spacing: 4) {
-                    Text("\(acc.activeSessions.count) aktif oturum")
-                        .font(.system(size: 9.5, weight: .medium))
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
+                    Text(
+                        l10n.t(
+                            "\(acc.activeSessions.count) aktif oturum",
+                            "\(acc.activeSessions.count) active sessions"
+                        )
+                    )
+                    .font(.system(size: 9.5, weight: .medium))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
 
                     Spacer(minLength: 2)
 
                     if let reset = acc.usage?.lastRateLimitHit?.resetsAt, reset > Date() {
-                        Text(TurkishDateFormatter.countdownString(until: reset))
+                        Text(l10n.countdown(until: reset))
                             .font(.system(size: 9, weight: .semibold))
                             .monospacedDigit()
                             .foregroundStyle(Color(nsColor: .systemOrange))
                             .lineLimit(1)
                     } else if let ts = acc.usage?.updatedAt {
-                        Text(TurkishDateFormatter.relativeString(from: ts))
+                        Text(l10n.relativeDate(ts))
                             .font(.system(size: 9))
                             .foregroundStyle(.tertiary)
                             .lineLimit(1)
@@ -187,7 +202,7 @@ struct SessionsWorkspaceView: View {
                 }
             } else {
                 Spacer()
-                Text("2. Hesap Bekleniyor")
+                Text(l10n.t("2. Hesap Bekleniyor", "Waiting for 2nd Account"))
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -221,7 +236,7 @@ struct SessionsWorkspaceView: View {
                             Image(systemName: "arrow.left.arrow.right")
                                 .font(.system(size: 10.5, weight: .semibold))
                         }
-                        Text("Çıkışsız Geçiş Yap")
+                        Text(l10n.t("Çıkışsız Geçiş Yap", "Instant Switch"))
                             .font(.system(size: 11, weight: .semibold))
                             .lineLimit(1)
                     }
@@ -231,7 +246,12 @@ struct SessionsWorkspaceView: View {
                 }
                 .buttonStyle(TactileScaleButtonStyle())
                 .disabled(viewModel.isBusy || viewModel.targetAccount == nil)
-                .help("Canlı oturumları aktarır ve çıkış yapmadan hedef hesabın penceresine geçer")
+                .help(
+                    l10n.t(
+                        "Canlı oturumları aktarır ve çıkış yapmadan hedef hesabın penceresine geçer",
+                        "Transfers live sessions and switches to the target account window without logging out"
+                    )
+                )
             } else {
                 Button {
                     viewModel.enableZeroLogoutDualProfileQuick()
@@ -239,7 +259,7 @@ struct SessionsWorkspaceView: View {
                     HStack(spacing: 5) {
                         Image(systemName: "macwindow.on.rectangle")
                             .font(.system(size: 10.5, weight: .semibold))
-                        Text("Çıkışsız Modu Aç")
+                        Text(l10n.t("Çıkışsız Modu Aç", "Enable Dual Profile"))
                             .font(.system(size: 11, weight: .semibold))
                             .lineLimit(1)
                     }
@@ -249,7 +269,12 @@ struct SessionsWorkspaceView: View {
                 }
                 .buttonStyle(TactileScaleButtonStyle())
                 .disabled(viewModel.isBusy)
-                .help("2. profili oluşturup başlatır — bir kez giriş yaptıktan sonra çıkış/giriş olmadan otomatik geçiş çalışır")
+                .help(
+                    l10n.t(
+                        "2. profili oluşturup başlatır — bir kez giriş yaptıktan sonra çıkış/giriş olmadan otomatik geçiş çalışır",
+                        "Creates and launches Profile 2 — sign in once to unlock instant zero-logout switching"
+                    )
+                )
             }
 
             Button {
@@ -258,7 +283,7 @@ struct SessionsWorkspaceView: View {
                 HStack(spacing: 5) {
                     Image(systemName: "arrow.triangle.2.circlepath")
                         .font(.system(size: 10.5, weight: .semibold))
-                    Text("Tümünü Eşitle")
+                    Text(l10n.t("Tümünü Eşitle", "Sync All"))
                         .font(.system(size: 11, weight: .medium))
                         .lineLimit(1)
                     if viewModel.pendingBidirectionalCount > 0 {
@@ -276,7 +301,12 @@ struct SessionsWorkspaceView: View {
             }
             .buttonStyle(TactileScaleButtonStyle())
             .disabled(viewModel.isBusy || viewModel.accounts.count < 2)
-            .help("İki hesap arasındaki arşivlenmemiş tüm oturumları çift yönlü eşitler")
+            .help(
+                l10n.t(
+                    "İki hesap arasındaki arşivlenmemiş tüm oturumları çift yönlü eşitler",
+                    "Bidirectionally syncs all active sessions between both accounts"
+                )
+            )
 
             Button {
                 viewModel.updateSettings { $0.autoSwitchEnabled.toggle() }
@@ -285,7 +315,7 @@ struct SessionsWorkspaceView: View {
                     Image(systemName: viewModel.settings.autoSwitchEnabled ? "bolt.fill" : "bolt.slash")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(viewModel.settings.autoSwitchEnabled ? Color(nsColor: .systemGreen) : .secondary)
-                    Text(isWideLayout ? "Oto Geçiş" : "Oto")
+                    Text(isWideLayout ? l10n.t("Oto Geçiş", "Auto Switch") : l10n.t("Oto", "Auto"))
                         .font(.system(size: 10.5, weight: .semibold))
                         .foregroundStyle(viewModel.settings.autoSwitchEnabled ? .primary : .secondary)
                 }
@@ -299,8 +329,11 @@ struct SessionsWorkspaceView: View {
             .buttonStyle(TactileScaleButtonStyle())
             .help(
                 viewModel.settings.autoSwitchEnabled
-                    ? "Otomatik limit geçişi AÇIK (\(viewModel.settings.autoSwitchTrigger.title))"
-                    : "Otomatik limit geçişi KAPALI"
+                    ? l10n.t(
+                        "Otomatik limit geçişi AÇIK (\(viewModel.settings.autoSwitchTrigger.title(isTurkish: true)))",
+                        "Automatic failover ON (\(viewModel.settings.autoSwitchTrigger.title(isTurkish: false)))"
+                    )
+                    : l10n.t("Otomatik limit geçişi KAPALI", "Automatic failover OFF")
             )
 
             Button {
@@ -320,8 +353,8 @@ struct SessionsWorkspaceView: View {
             .disabled(viewModel.isBusy)
             .help(
                 viewModel.settings.secondaryProfiles.isEmpty
-                    ? "Claude Desktop'ı güvenle yenile"
-                    : "2. Profil Claude Desktop penceresini aç / öne al"
+                    ? l10n.t("Claude Desktop'ı güvenle yenile", "Safely reload Claude Desktop")
+                    : l10n.t("2. Profil Claude Desktop penceresini aç / öne al", "Focus or launch Profile 2 Claude Desktop window")
             )
         }
     }
@@ -334,7 +367,7 @@ struct SessionsWorkspaceView: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 10.5, weight: .medium))
                     .foregroundStyle(.secondary)
-                TextField("Oturum veya proje ara...", text: $viewModel.searchText)
+                TextField(l10n.t("Oturum veya proje ara...", "Search sessions or projects..."), text: $viewModel.searchText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 11.5))
                 if !viewModel.searchText.isEmpty {
@@ -355,17 +388,10 @@ struct SessionsWorkspaceView: View {
             LiquidGlassSegmentedControl(
                 items: SessionFilter.allCases,
                 selection: $viewModel.filter,
-                title: { filter in
-                    switch filter {
-                    case .all: return "Tümü"
-                    case .needsSync: return "Yeni"
-                    case .live: return "Canlı"
-                    case .archived: return "Arşiv"
-                    }
-                },
+                title: { $0.shortTitle(l10n) },
                 compact: true
             )
-            .frame(width: isWideLayout ? 260 : 224)
+            .frame(width: isWideLayout ? 276 : 232)
         }
     }
 
@@ -380,7 +406,7 @@ struct SessionsWorkspaceView: View {
                     Image(systemName: "tray")
                         .font(.system(size: 24))
                         .foregroundStyle(.tertiary)
-                    Text("Bu filtrede oturum bulunamadı")
+                    Text(l10n.t("Bu filtrede oturum bulunamadı", "No sessions match this filter"))
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.secondary)
                     Spacer()
@@ -397,6 +423,7 @@ struct SessionsWorkspaceView: View {
                                 isCrossProfile: viewModel.isCrossProfileMode,
                                 isBusy: viewModel.isBusy,
                                 targetName: viewModel.targetAccount?.displayName,
+                                l10n: l10n,
                                 onTransfer: { switchAfter in
                                     viewModel.transferSession(session, switchToTargetAfter: switchAfter)
                                 },
@@ -494,10 +521,10 @@ struct SessionsWorkspaceView: View {
 
     private func bannerActionLabel(_ action: StatusBanner.QuickAction) -> String {
         switch action {
-        case .reloadDefaultClaude: return "Yenile"
+        case .reloadDefaultClaude: return l10n.t("Yenile", "Reload")
         case .launchOrReloadTargetProfile(_, let label): return label
-        case .setupDualProfile: return "2. Profili Aç"
-        case .openBackups: return "Yedekler"
+        case .setupDualProfile: return l10n.t("2. Profili Aç", "Open Profile 2")
+        case .openBackups: return l10n.t("Yedekler", "Backups")
         }
     }
 
@@ -507,14 +534,19 @@ struct SessionsWorkspaceView: View {
             Image(systemName: "person.2.slash")
                 .font(.system(size: 28))
                 .foregroundStyle(.tertiary)
-            Text("Claude Desktop oturum klasörü bulunamadı")
+            Text(l10n.t("Claude Desktop oturum klasörü bulunamadı", "Claude Desktop sessions folder not found"))
                 .font(.system(size: 13, weight: .semibold))
-            Text("~/Library/Application Support/Claude/claude-code-sessions altında hesap verisi algılanmadı.")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 36)
-            Button("Tekrar Tara") {
+            Text(
+                l10n.t(
+                    "~/Library/Application Support/Claude/claude-code-sessions altında hesap verisi algılanmadı.",
+                    "No account data found under ~/Library/Application Support/Claude/claude-code-sessions."
+                )
+            )
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 36)
+            Button(l10n.t("Tekrar Tara", "Scan Again")) {
                 viewModel.refresh(userInitiated: true)
             }
             .nativeGlassButton(prominent: true)
@@ -536,6 +568,7 @@ struct SessionRowView: View {
     let isCrossProfile: Bool
     let isBusy: Bool
     let targetName: String?
+    let l10n: L10n
     let onTransfer: (Bool) -> Void
     let onCopyResume: () -> Void
     let onRevealFinder: () -> Void
@@ -571,7 +604,7 @@ struct SessionRowView: View {
                             Circle()
                                 .fill(Color(nsColor: .systemGreen))
                                 .frame(width: 5, height: 5)
-                            Text("CANLI")
+                            Text(l10n.t("CANLI", "LIVE"))
                                 .font(.system(size: 8.5, weight: .bold))
                                 .foregroundStyle(Color(nsColor: .systemGreen))
                         }
@@ -591,7 +624,7 @@ struct SessionRowView: View {
                     Image(systemName: "folder.fill")
                         .font(.system(size: 8.5))
                         .foregroundStyle(.tertiary)
-                    Text(session.projectName)
+                    Text(session.cwd.isEmpty ? l10n.t("Bilinmeyen klasör", "Unknown folder") : session.projectName)
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -608,7 +641,7 @@ struct SessionRowView: View {
                     Text("·")
                         .foregroundStyle(.quaternary)
 
-                    Text("\(session.completedTurns) tur")
+                    Text(l10n.t("\(session.completedTurns) tur", "\(session.completedTurns) turns"))
                         .font(.system(size: 10, weight: .medium))
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
@@ -625,7 +658,7 @@ struct SessionRowView: View {
                     Text("·")
                         .foregroundStyle(.quaternary)
 
-                    Text(TurkishDateFormatter.relativeString(from: session.effectiveTimestamp))
+                    Text(l10n.relativeDate(session.effectiveTimestamp))
                         .font(.system(size: 10))
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
@@ -647,8 +680,12 @@ struct SessionRowView: View {
                                 : (isCrossProfile ? "arrow.right.circle.fill" : "arrow.right")
                         )
                         .font(.system(size: 9.5, weight: .bold))
-                        Text(isJustTransferred ? "Tamam" : (isCrossProfile ? "Geç" : "Aktar"))
-                            .font(.system(size: 10.5, weight: .semibold))
+                        Text(
+                            isJustTransferred
+                                ? l10n.t("Tamam", "Done")
+                                : (isCrossProfile ? l10n.t("Geç", "Switch") : l10n.t("Aktar", "Sync"))
+                        )
+                        .font(.system(size: 10.5, weight: .semibold))
                     }
                     .padding(.horizontal, 9)
                     .padding(.vertical, 4.5)
@@ -667,16 +704,21 @@ struct SessionRowView: View {
                 }
                 .buttonStyle(TactileScaleButtonStyle())
                 .disabled(isBusy || targetName == nil)
-                .help("Bu oturumu \(targetName ?? "hedef hesaba") aktar")
+                .help(
+                    l10n.t(
+                        "Bu oturumu \(targetName ?? "hedef hesaba") aktar",
+                        "Transfer this session to \(targetName ?? "target account")"
+                    )
+                )
 
                 Menu {
-                    Button("Sadece Kartı Hedefe Aktar") {
+                    Button(l10n.t("Sadece Kartı Hedefe Aktar", "Copy Session Card Only")) {
                         onTransfer(false)
                     }
                     .disabled(targetName == nil)
 
                     if isCrossProfile {
-                        Button("Aktar ve Hedef Profile Geç") {
+                        Button(l10n.t("Aktar ve Hedef Profile Geç", "Sync & Switch to Target Profile")) {
                             onTransfer(true)
                         }
                     }
@@ -684,13 +726,13 @@ struct SessionRowView: View {
                     Divider()
 
                     if session.cliResumeCommand != nil {
-                        Button("Terminal `claude --resume` Komutunu Kopyala") {
+                        Button(l10n.t("Terminal `claude --resume` Komutunu Kopyala", "Copy Terminal `claude --resume` Command")) {
                             onCopyResume()
                         }
                     }
 
                     if !session.cwd.isEmpty {
-                        Button("Proje Klasörünü Finder'da Göster") {
+                        Button(l10n.t("Proje Klasörünü Finder'da Göster", "Reveal Project Folder in Finder")) {
                             onRevealFinder()
                         }
                     }
@@ -725,13 +767,19 @@ struct SessionRowView: View {
     private var relationPill: some View {
         switch relation {
         case .onlyInSource:
-            badge("Yeni", Color(nsColor: .systemBlue))
+            badge(l10n.t("Yeni", "New"), Color(nsColor: .systemBlue))
         case .sourceNewer(let delta):
-            badge(delta > 0 ? "+\(delta) tur" : "Güncelle", Color(nsColor: .systemOrange))
+            badge(
+                delta > 0 ? l10n.t("+\(delta) tur", "+\(delta) turns") : l10n.t("Güncelle", "Update"),
+                Color(nsColor: .systemOrange)
+            )
         case .inSync:
-            badge("Eşit", Color(nsColor: .systemGreen))
+            badge(l10n.t("Eşit", "Synced"), Color(nsColor: .systemGreen))
         case .targetNewer(let delta):
-            badge(delta > 0 ? "Hedef +\(delta)" : "Hedef Yeni", Color.secondary)
+            badge(
+                delta > 0 ? l10n.t("Hedef +\(delta)", "Target +\(delta)") : l10n.t("Hedef Yeni", "Target Newer"),
+                Color.secondary
+            )
         }
     }
 

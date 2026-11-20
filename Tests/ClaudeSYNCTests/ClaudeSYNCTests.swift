@@ -568,6 +568,37 @@ final class ClaudeSYNCTests: XCTestCase {
         XCTAssertEqual(secondSummary.updatedCount, 0)
     }
 
+    func testBilingualLocalizationAndOnboardingSettingsPersistence() throws {
+        // Default settings should require onboarding on first run & support system language
+        let fresh = BridgeSettings()
+        XCTAssertFalse(fresh.hasCompletedOnboarding)
+        XCTAssertEqual(fresh.language, .system)
+
+        // Encode/decode roundtrip preserving language & onboarding flag
+        var custom = BridgeSettings(language: .english, hasCompletedOnboarding: true)
+        let encoded = try JSONEncoder().encode(custom)
+        let decoded = try JSONDecoder().decode(BridgeSettings.self, from: encoded)
+        XCTAssertEqual(decoded.language, .english)
+        XCTAssertTrue(decoded.hasCompletedOnboarding)
+        XCTAssertFalse(decoded.language.resolvedIsTurkish)
+
+        custom.language = .turkish
+        XCTAssertTrue(custom.language.resolvedIsTurkish)
+
+        // Localized date formatters produce distinct native TR vs EN strings
+        let now = Date()
+        XCTAssertEqual(LocalizedDateFormatter.relativeString(from: now.addingTimeInterval(-120), now: now, isTurkish: true), "2 dk önce")
+        XCTAssertEqual(LocalizedDateFormatter.relativeString(from: now.addingTimeInterval(-120), now: now, isTurkish: false), "2m ago")
+        XCTAssertEqual(LocalizedDateFormatter.countdownString(until: now.addingTimeInterval(3600 * 50), now: now, isTurkish: true), "2g 2sa kaldı")
+        XCTAssertEqual(LocalizedDateFormatter.countdownString(until: now.addingTimeInterval(3600 * 50), now: now, isTurkish: false), "2d 2h left")
+
+        // Localized profile names
+        XCTAssertEqual(ProfileConfig.defaultProfile.localizedName(isTurkish: true), "Ana Profil")
+        XCTAssertEqual(ProfileConfig.defaultProfile.localizedName(isTurkish: false), "Primary Profile")
+        XCTAssertEqual(MenuBarDisplayMode.iconAndActiveUsage.title(isTurkish: false), "Active 5h/7d")
+        XCTAssertEqual(MenuBarDisplayMode.iconAndActiveUsage.title(isTurkish: true), "Aktif 5s/7g")
+    }
+
     // MARK: - Helper
 
     private func writeSessionJSON(

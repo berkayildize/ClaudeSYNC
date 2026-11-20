@@ -7,22 +7,34 @@ struct MainWindowView: View {
     var includeTrafficLightInset: Bool = false
     @Environment(\.colorScheme) private var scheme
 
+    private var l10n: L10n { viewModel.l10n }
+
     var body: some View {
-        HStack(spacing: 0) {
-            sidebarColumn
-                .frame(width: 216)
+        Group {
+            if viewModel.shouldShowOnboarding {
+                OnboardingView(
+                    viewModel: viewModel,
+                    useNativeGlassBackdrop: useNativeGlassBackdrop,
+                    includeTrafficLightInset: includeTrafficLightInset
+                )
+            } else {
+                HStack(spacing: 0) {
+                    sidebarColumn
+                        .frame(width: 216)
 
-            Rectangle()
-                .fill(scheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.08))
-                .frame(width: 0.75)
+                    Rectangle()
+                        .fill(scheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.08))
+                        .frame(width: 0.75)
 
-            detailColumn
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .frame(minWidth: 800, idealWidth: 920, minHeight: 580, idealHeight: 650)
-        .background {
-            if useNativeGlassBackdrop {
-                MacOSGlassBackdrop(material: .underWindowBackground, blendingMode: .behindWindow)
+                    detailColumn
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                .frame(minWidth: 800, idealWidth: 920, minHeight: 580, idealHeight: 650)
+                .background {
+                    if useNativeGlassBackdrop {
+                        MacOSGlassBackdrop(material: .underWindowBackground, blendingMode: .behindWindow)
+                    }
+                }
             }
         }
         .onAppear {
@@ -41,9 +53,13 @@ struct MainWindowView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("ClaudeSYNC")
                         .font(.system(size: 14, weight: .bold))
-                    Text(viewModel.isCrossProfileMode ? "Çift Profil Aktif" : "Tek Profil Modu")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.secondary)
+                    Text(
+                        viewModel.isCrossProfileMode
+                            ? l10n.t("Çift Profil Aktif", "Dual Profile Active")
+                            : l10n.t("Tek Profil Modu", "Single Profile Mode")
+                    )
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
                 }
                 Spacer()
             }
@@ -64,7 +80,7 @@ struct MainWindowView: View {
             // Mini Live Telemetry Summary inside Sidebar
             if !viewModel.accounts.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("HIZLI LİMİT DURUMU")
+                    Text(l10n.t("HIZLI LİMİT DURUMU", "LIVE LIMIT STATUS"))
                         .font(.system(size: 8.5, weight: .bold))
                         .foregroundStyle(.tertiary)
                         .tracking(0.7)
@@ -84,7 +100,7 @@ struct MainWindowView: View {
                 Image(systemName: "menubar.rectangle")
                     .font(.system(size: 11.5, weight: .medium))
                     .foregroundStyle(.secondary)
-                Text("Üst Bar Simgesi")
+                Text(l10n.t("Üst Bar Simgesi", "Menu Bar Icon"))
                     .font(.system(size: 11, weight: .medium))
                 Spacer()
                 Toggle(
@@ -129,7 +145,7 @@ struct MainWindowView: View {
                     .foregroundStyle(isSelected ? BridgeTheme.primaryAccent : .secondary)
                     .frame(width: 18)
 
-                Text(section.rawValue)
+                Text(section.title(l10n))
                     .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
                     .foregroundStyle(isSelected ? .primary : .secondary)
 
@@ -163,7 +179,9 @@ struct MainWindowView: View {
     private func sidebarBadge(for section: MainAppSection) -> String? {
         switch section {
         case .sessions:
-            if viewModel.liveSessionCount > 0 { return "\(viewModel.liveSessionCount) canlı" }
+            if viewModel.liveSessionCount > 0 {
+                return l10n.t("\(viewModel.liveSessionCount) canlı", "\(viewModel.liveSessionCount) live")
+            }
             let count = viewModel.sourceAccount?.activeSessions.count ?? 0
             return count > 0 ? "\(count)" : nil
         case .limits:
@@ -233,7 +251,7 @@ struct MainWindowView: View {
                         Circle()
                             .fill(Color(nsColor: .systemGreen))
                             .frame(width: 5.5, height: 5.5)
-                        Text("Oto Kart Açık")
+                        Text(l10n.t("Oto Kart Açık", "Auto Sync On"))
                             .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(.secondary)
                     }
@@ -248,7 +266,7 @@ struct MainWindowView: View {
                     HStack(spacing: 4) {
                         Image(systemName: "folder")
                             .font(.system(size: 10.5))
-                        Text("Yedekler")
+                        Text(l10n.t("Yedekler", "Backups"))
                             .font(.system(size: 10.5, weight: .medium))
                     }
                     .padding(.horizontal, 9)
@@ -272,7 +290,7 @@ struct MainWindowView: View {
                         .liquidGlassCapsule(tint: nil, interactive: false)
                 }
                 .buttonStyle(TactileScaleButtonStyle())
-                .help("Yenile (⌘R)")
+                .help(l10n.t("Yenile (⌘R)", "Refresh (⌘R)"))
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -301,23 +319,35 @@ struct MainWindowView: View {
 
     private var sectionTitle: String {
         switch viewModel.mainSection {
-        case .sessions: return "Oturumlar"
-        case .limits: return "Limitler & Otomatik Geçiş"
-        case .profiles: return "Claude Desktop Profilleri"
-        case .settings: return "Ayarlar"
+        case .sessions: return l10n.t("Oturumlar", "Sessions")
+        case .limits: return l10n.t("Limitler & Otomatik Geçiş", "Limits & Auto-Failover")
+        case .profiles: return l10n.t("Claude Desktop Profilleri", "Claude Desktop Profiles")
+        case .settings: return l10n.t("Ayarlar", "Settings")
         }
     }
 
     private var sectionSubtitle: String {
         switch viewModel.mainSection {
         case .sessions:
-            return "Hesaplar arasında yerel oturum kartlarını aktarın, eşitleyin ve bağlam kaybetmeden devam edin"
+            return l10n.t(
+                "Hesaplar arasında yerel oturum kartlarını aktarın, eşitleyin ve bağlam kaybetmeden devam edin",
+                "Transfer and sync local session cards across accounts without losing active context"
+            )
         case .limits:
-            return "5 saatlik ve 7 günlük kullanım göstergeleri, yenilenme sayaçları ve otomatik geçiş kuralları"
+            return l10n.t(
+                "5 saatlik ve 7 günlük kullanım göstergeleri, yenilenme sayaçları ve otomatik geçiş kuralları",
+                "Real-time 5-hour & 7-day usage gauges, reset countdowns, and automatic failover rules"
+            )
         case .profiles:
-            return "Çıkış/giriş yapmadan paralel çalışan izole Claude Desktop profilleri"
+            return l10n.t(
+                "Çıkış/giriş yapmadan paralel çalışan izole Claude Desktop profilleri",
+                "Isolated Claude Desktop profiles running side by side with zero logout"
+            )
         case .settings:
-            return "Üst bar kontrolü, hesap isimleri, otomatik kart eşitleme ve sistem tercihleri"
+            return l10n.t(
+                "Dil, ilk kurulum sihirbazı, üst bar kontrolü, hesap isimleri ve sistem tercihleri",
+                "Language, setup wizard, menu bar controls, account nicknames, and system preferences"
+            )
         }
     }
 }

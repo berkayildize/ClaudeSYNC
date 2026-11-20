@@ -34,9 +34,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // Standard native macOS app menu (⌘Q, ⌘W, ⌘O, ⌘R, ⌘⇧M, ⌘C/V/X/A)
         installMainMenu()
 
-        // Wire open-window handler
+        // Wire open-window & language-change handlers
         viewModel.openMainWindowAction = { [weak self] in
             self?.showMainWindow()
+        }
+        viewModel.languageChangedAction = { [weak self] in
+            guard let self else { return }
+            self.installMainMenu()
+            self.updateStatusItemTooltip()
+            self.updateStatusItemImage()
         }
 
         // Observe Menu Bar visibility toggle & live image updates
@@ -133,7 +139,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     button.target = self
                     button.action = #selector(handleStatusBarClick(_:))
                     button.sendAction(on: [.leftMouseUp, .rightMouseUp])
-                    button.toolTip = "ClaudeSYNC — Sol tık: Hızlı Menü · Sağ tık: Kısayollar"
+                    button.toolTip = viewModel.l10n.t(
+                        "ClaudeSYNC — Sol tık: Hızlı Menü · Sağ tık: Kısayollar",
+                        "ClaudeSYNC — Left-click: Quick Menu · Right-click: Shortcuts"
+                    )
                 }
                 statusItem = item
             }
@@ -147,6 +156,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             // Guarantee Dock icon & main window stay accessible when Menu Bar is hidden
             NSApp.setActivationPolicy(.regular)
         }
+    }
+
+    private func updateStatusItemTooltip() {
+        statusItem?.button?.toolTip = viewModel.l10n.t(
+            "ClaudeSYNC — Sol tık: Hızlı Menü · Sağ tık: Kısayollar",
+            "ClaudeSYNC — Left-click: Quick Menu · Right-click: Shortcuts"
+        )
     }
 
     private func updateStatusItemImage() {
@@ -190,26 +206,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func showStatusBarContextMenu(from button: NSStatusBarButton) {
+        let t = viewModel.l10n
         let menu = NSMenu()
-        let openItem = NSMenuItem(title: "ClaudeSYNC Penceresini Aç", action: #selector(handleOpenMainWindow), keyEquivalent: "")
+        let openItem = NSMenuItem(title: t.t("ClaudeSYNC Penceresini Aç", "Open ClaudeSYNC Window"), action: #selector(handleOpenMainWindow), keyEquivalent: "")
         openItem.target = self
         menu.addItem(openItem)
 
-        let syncItem = NSMenuItem(title: "Tüm Aktif Oturumları Eşitle", action: #selector(handleQuickSync), keyEquivalent: "")
+        let syncItem = NSMenuItem(title: t.t("Tüm Aktif Oturumları Eşitle", "Sync All Active Sessions"), action: #selector(handleQuickSync), keyEquivalent: "")
         syncItem.target = self
         menu.addItem(syncItem)
 
-        let refreshItem = NSMenuItem(title: "Yenile", action: #selector(handleRefresh), keyEquivalent: "")
+        let refreshItem = NSMenuItem(title: t.t("Yenile", "Refresh"), action: #selector(handleRefresh), keyEquivalent: "")
         refreshItem.target = self
         menu.addItem(refreshItem)
 
         menu.addItem(.separator())
 
-        let hideBarItem = NSMenuItem(title: "Üst Bar Simgesini Gizle", action: #selector(handleToggleMenuBar), keyEquivalent: "")
+        let hideBarItem = NSMenuItem(title: t.t("Üst Bar Simgesini Gizle", "Hide Menu Bar Icon"), action: #selector(handleToggleMenuBar), keyEquivalent: "")
         hideBarItem.target = self
         menu.addItem(hideBarItem)
 
-        let quitItem = NSMenuItem(title: "ClaudeSYNC'ten Çık", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: t.t("ClaudeSYNC'ten Çık", "Quit ClaudeSYNC"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(quitItem)
 
         statusItem?.menu = menu
@@ -220,63 +237,72 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // MARK: - Native AppKit Application Menu
 
     private func installMainMenu() {
+        let t = viewModel.l10n
         let mainMenu = NSMenu()
 
         // 1. ClaudeSYNC Application Menu
         let appMenuItem = NSMenuItem()
         let appMenu = NSMenu(title: "ClaudeSYNC")
-        appMenu.addItem(NSMenuItem(title: "ClaudeSYNC Hakkında", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: ""))
+        appMenu.addItem(NSMenuItem(title: t.t("ClaudeSYNC Hakkında", "About ClaudeSYNC"), action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: ""))
+        let wizardItem = NSMenuItem(title: t.t("İlk Kurulum Sihirbazı...", "Setup Wizard..."), action: #selector(handleOpenOnboarding), keyEquivalent: "")
+        wizardItem.target = self
+        appMenu.addItem(wizardItem)
         appMenu.addItem(.separator())
-        let hideItem = NSMenuItem(title: "ClaudeSYNC'i Gizle", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        let hideItem = NSMenuItem(title: t.t("ClaudeSYNC'i Gizle", "Hide ClaudeSYNC"), action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem(hideItem)
         appMenu.addItem(.separator())
-        appMenu.addItem(NSMenuItem(title: "ClaudeSYNC'ten Çık", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        appMenu.addItem(NSMenuItem(title: t.t("ClaudeSYNC'ten Çık", "Quit ClaudeSYNC"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
 
-        // 2. İşlemler (Actions) Menu
+        // 2. Actions Menu
         let actionsMenuItem = NSMenuItem()
-        let actionsMenu = NSMenu(title: "İşlemler")
+        let actionsMenu = NSMenu(title: t.t("İşlemler", "Actions"))
 
-        let openItem = NSMenuItem(title: "Ana Pencereyi Aç", action: #selector(handleOpenMainWindow), keyEquivalent: "o")
+        let openItem = NSMenuItem(title: t.t("Ana Pencereyi Aç", "Open Main Window"), action: #selector(handleOpenMainWindow), keyEquivalent: "o")
         openItem.target = self
         actionsMenu.addItem(openItem)
 
-        let refreshItem = NSMenuItem(title: "Yenile", action: #selector(handleRefresh), keyEquivalent: "r")
+        let refreshItem = NSMenuItem(title: t.t("Yenile", "Refresh"), action: #selector(handleRefresh), keyEquivalent: "r")
         refreshItem.target = self
         actionsMenu.addItem(refreshItem)
 
-        let syncItem = NSMenuItem(title: "Tüm Aktifleri Eşitle", action: #selector(handleQuickSync), keyEquivalent: "s")
+        let syncItem = NSMenuItem(title: t.t("Tüm Aktifleri Eşitle", "Sync All Active"), action: #selector(handleQuickSync), keyEquivalent: "s")
         syncItem.keyEquivalentModifierMask = [.command, .shift]
         syncItem.target = self
         actionsMenu.addItem(syncItem)
 
         actionsMenu.addItem(.separator())
 
-        let toggleBarItem = NSMenuItem(title: "Üst Bar Simgesini Aç/Kapat", action: #selector(handleToggleMenuBar), keyEquivalent: "m")
+        let toggleBarItem = NSMenuItem(title: t.t("Üst Bar Simgesini Aç/Kapat", "Toggle Menu Bar Icon"), action: #selector(handleToggleMenuBar), keyEquivalent: "m")
         toggleBarItem.keyEquivalentModifierMask = [.command, .shift]
         toggleBarItem.target = self
         actionsMenu.addItem(toggleBarItem)
 
         actionsMenu.addItem(.separator())
-        actionsMenu.addItem(NSMenuItem(title: "Pencereyi Kapat", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w"))
+        actionsMenu.addItem(NSMenuItem(title: t.t("Pencereyi Kapat", "Close Window"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w"))
 
         actionsMenuItem.submenu = actionsMenu
         mainMenu.addItem(actionsMenuItem)
 
-        // 3. Düzenle (Edit) Menu — enables ⌘C, ⌘V, ⌘X, ⌘A inside TextFields
+        // 3. Edit Menu — enables ⌘C, ⌘V, ⌘X, ⌘A inside TextFields
         let editMenuItem = NSMenuItem()
-        let editMenu = NSMenu(title: "Düzenle")
-        editMenu.addItem(NSMenuItem(title: "Geri Al", action: Selector(("undo:")), keyEquivalent: "z"))
+        let editMenu = NSMenu(title: t.t("Düzenle", "Edit"))
+        editMenu.addItem(NSMenuItem(title: t.t("Geri Al", "Undo"), action: Selector(("undo:")), keyEquivalent: "z"))
         editMenu.addItem(.separator())
-        editMenu.addItem(NSMenuItem(title: "Kes", action: #selector(NSText.cut(_:)), keyEquivalent: "x"))
-        editMenu.addItem(NSMenuItem(title: "Kopyala", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
-        editMenu.addItem(NSMenuItem(title: "Yapıştır", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
-        editMenu.addItem(NSMenuItem(title: "Tümünü Seç", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
+        editMenu.addItem(NSMenuItem(title: t.t("Kes", "Cut"), action: #selector(NSText.cut(_:)), keyEquivalent: "x"))
+        editMenu.addItem(NSMenuItem(title: t.t("Kopyala", "Copy"), action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
+        editMenu.addItem(NSMenuItem(title: t.t("Yapıştır", "Paste"), action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
+        editMenu.addItem(NSMenuItem(title: t.t("Tümünü Seç", "Select All"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
         editMenuItem.submenu = editMenu
         mainMenu.addItem(editMenuItem)
 
         NSApp.mainMenu = mainMenu
+    }
+
+    @objc private func handleOpenOnboarding() {
+        viewModel.reopenOnboarding()
+        showMainWindow()
     }
 
     @objc private func handleOpenMainWindow() {

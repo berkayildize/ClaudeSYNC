@@ -5,6 +5,8 @@ struct MenuBarContentView: View {
     @ObservedObject var viewModel: AppViewModel
     var useNativeGlassBackdrop: Bool = true
 
+    private var l10n: L10n { viewModel.l10n }
+
     var body: some View {
         VStack(spacing: 0) {
             headerBar
@@ -46,10 +48,14 @@ struct MenuBarContentView: View {
                     Text("ClaudeSYNC")
                         .font(.system(size: 12.5, weight: .semibold))
                         .lineLimit(1)
-                    Text(viewModel.isCrossProfileMode ? "Çift Profil" : "Tek Profil")
-                        .font(.system(size: 9.5, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                    Text(
+                        viewModel.isCrossProfileMode
+                            ? l10n.t("Çift Profil", "Dual Profile")
+                            : l10n.t("Tek Profil", "Single Profile")
+                    )
+                    .font(.system(size: 9.5, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 }
             }
             .fixedSize()
@@ -59,7 +65,7 @@ struct MenuBarContentView: View {
             LiquidGlassSegmentedControl(
                 items: PopoverTab.allCases,
                 selection: $viewModel.activeTab,
-                title: { $0.rawValue },
+                title: { $0.title(l10n) },
                 icon: { $0.icon },
                 compact: true
             )
@@ -75,7 +81,7 @@ struct MenuBarContentView: View {
                     .liquidGlassCapsule(tint: nil, interactive: false)
             }
             .buttonStyle(TactileScaleButtonStyle())
-            .help("Ana ClaudeSYNC penceresini aç (⌘O)")
+            .help(l10n.t("Ana ClaudeSYNC penceresini aç (⌘O)", "Open main ClaudeSYNC window (⌘O)"))
 
             Button {
                 viewModel.refresh(userInitiated: true)
@@ -92,7 +98,7 @@ struct MenuBarContentView: View {
                     .liquidGlassCapsule(tint: nil, interactive: false)
             }
             .buttonStyle(TactileScaleButtonStyle())
-            .help("Oturumları ve limitleri yenile")
+            .help(l10n.t("Oturumları ve limitleri yenile", "Refresh sessions and limits"))
         }
         .padding(.horizontal, BridgeTheme.hPad)
         .padding(.top, 12)
@@ -109,8 +115,14 @@ struct MenuBarContentView: View {
                     .frame(width: 6, height: 6)
                 Text(
                     viewModel.liveSessionCount > 0
-                        ? "\(viewModel.liveSessionCount) canlı · \(viewModel.filteredSourceSessions.count) listelenen"
-                        : "\(viewModel.filteredSourceSessions.count) oturum"
+                        ? l10n.t(
+                            "\(viewModel.liveSessionCount) canlı · \(viewModel.filteredSourceSessions.count) listelenen",
+                            "\(viewModel.liveSessionCount) live · \(viewModel.filteredSourceSessions.count) shown"
+                        )
+                        : l10n.t(
+                            "\(viewModel.filteredSourceSessions.count) oturum",
+                            "\(viewModel.filteredSourceSessions.count) sessions"
+                        )
                 )
                 .font(.system(size: 10.5, weight: .medium))
                 .monospacedDigit()
@@ -118,14 +130,14 @@ struct MenuBarContentView: View {
             }
 
             if viewModel.settings.autoSyncSharedCards {
-                Text("· Oto Kart")
+                Text(l10n.t("· Oto Kart", "· Auto Sync"))
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.tertiary)
             }
 
             Spacer()
 
-            Button("Uygulamayı Aç") {
+            Button(l10n.t("Uygulamayı Aç", "Open App")) {
                 viewModel.openMainWindow()
             }
             .buttonStyle(.plain)
@@ -135,7 +147,7 @@ struct MenuBarContentView: View {
             Text("·")
                 .foregroundStyle(.quaternary)
 
-            Button("Yedekler") {
+            Button(l10n.t("Yedekler", "Backups")) {
                 viewModel.openBackupsFolder()
             }
             .buttonStyle(.plain)
@@ -145,7 +157,7 @@ struct MenuBarContentView: View {
             Text("·")
                 .foregroundStyle(.quaternary)
 
-            Button("Çıkış") {
+            Button(l10n.t("Çıkış", "Quit")) {
                 NSApplication.shared.terminate(nil)
             }
             .buttonStyle(.plain)

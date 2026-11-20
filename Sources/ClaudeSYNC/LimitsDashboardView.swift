@@ -5,6 +5,8 @@ struct LimitsDashboardView: View {
     @ObservedObject var viewModel: AppViewModel
     var isWideLayout: Bool = false
 
+    private var l10n: L10n { viewModel.l10n }
+
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: 12) {
@@ -13,7 +15,6 @@ struct LimitsDashboardView: View {
                 if viewModel.accounts.isEmpty {
                     emptyLimitsCard
                 } else if isWideLayout && viewModel.accounts.count >= 2 {
-                    // Clean symmetric 2-column grid in the full Desktop App window
                     HStack(alignment: .top, spacing: 12) {
                         ForEach(viewModel.accounts.prefix(2)) { account in
                             accountLimitDetailCard(account)
@@ -56,11 +57,16 @@ struct LimitsDashboardView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 1.5) {
-                    Text("Otomatik Limit Geçişi")
+                    Text(l10n.t("Otomatik Limit Geçişi", "Automatic Limit Failover"))
                         .font(.system(size: 12.5, weight: .semibold))
-                    Text("Limit dolduğunda aktif oturumu diğer hesaba otomatik aktarır")
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(.secondary)
+                    Text(
+                        l10n.t(
+                            "Limit dolduğunda aktif oturumu diğer hesaba otomatik aktarır",
+                            "Automatically transfers active sessions to your healthy account when a limit hits"
+                        )
+                    )
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
                 }
 
                 Spacer()
@@ -79,7 +85,7 @@ struct LimitsDashboardView: View {
 
             if viewModel.settings.autoSwitchEnabled {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("TETİKLEME KOŞULU")
+                    Text(l10n.t("TETİKLEME KOŞULU", "FAILOVER TRIGGER"))
                         .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(.tertiary)
                         .tracking(0.7)
@@ -90,13 +96,13 @@ struct LimitsDashboardView: View {
                             get: { viewModel.settings.autoSwitchTrigger },
                             set: { val in viewModel.updateSettings { $0.autoSwitchTrigger = val } }
                         ),
-                        title: { $0.title },
+                        title: { $0.title(isTurkish: l10n.isTurkish) },
                         compact: true
                     )
 
                     HStack(spacing: 16) {
                         Toggle(
-                            "Tüm canlı oturumları birlikte taşı",
+                            l10n.t("Tüm canlı oturumları birlikte taşı", "Transfer all live sessions together"),
                             isOn: Binding(
                                 get: { viewModel.settings.autoSwitchTransferAllLive },
                                 set: { val in viewModel.updateSettings { $0.autoSwitchTransferAllLive = val } }
@@ -106,7 +112,7 @@ struct LimitsDashboardView: View {
                         .toggleStyle(.checkbox)
 
                         Toggle(
-                            "Bildirim gönder",
+                            l10n.t("Bildirim gönder", "Send notification"),
                             isOn: Binding(
                                 get: { viewModel.settings.autoSwitchNotify },
                                 set: { val in viewModel.updateSettings { $0.autoSwitchNotify = val } }
@@ -125,9 +131,14 @@ struct LimitsDashboardView: View {
             if viewModel.isCrossProfileMode {
                 HStack(spacing: 8) {
                     PulseStatusDot(color: Color(nsColor: .systemGreen), size: 6, isPulsing: true)
-                    Text("Çıkışsız Çift Profil aktif — iki hesap kalıcı giriş yapılı.")
-                        .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(.secondary)
+                    Text(
+                        l10n.t(
+                            "Çıkışsız Çift Profil aktif — iki hesap kalıcı giriş yapılı.",
+                            "Zero-Logout Dual Profile active — both accounts stay signed in."
+                        )
+                    )
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(.secondary)
                     Spacer()
                 }
             } else {
@@ -136,17 +147,22 @@ struct LimitsDashboardView: View {
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Color(nsColor: .systemOrange))
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("Çıkış yapmadan doğrudan pencere geçişi")
+                        Text(l10n.t("Çıkış yapmadan doğrudan pencere geçişi", "Direct window switching without logging out"))
                             .font(.system(size: 11, weight: .semibold))
-                        Text("2. profili bir kez açın; limit dolunca çıkış/girişsiz otomatik geçsin.")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
+                        Text(
+                            l10n.t(
+                                "2. profili bir kez açın; limit dolunca çıkış/girişsiz otomatik geçsin.",
+                                "Launch Profile 2 once to unlock automatic zero-logout switching."
+                            )
+                        )
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
                     }
                     Spacer()
                     Button {
                         viewModel.enableZeroLogoutDualProfileQuick()
                     } label: {
-                        Text("2. Profili Aç")
+                        Text(l10n.t("2. Profili Aç", "Open Profile 2"))
                             .font(.system(size: 10.5, weight: .semibold))
                             .padding(.horizontal, 11)
                             .padding(.vertical, 5)
@@ -181,16 +197,21 @@ struct LimitsDashboardView: View {
                     HStack(spacing: 6) {
                         Text(account.displayName)
                             .font(.system(size: 13, weight: .semibold))
-                        Text(account.profileName)
+                        Text(l10n.profileDisplayName(account.profileName, isDefault: account.isDefaultProfile))
                             .font(.system(size: 9.5, weight: .medium))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 1.5)
                             .background(Capsule().fill(Color.primary.opacity(0.08)))
                             .foregroundStyle(.secondary)
                     }
-                    Text("Org \(String(account.orgUuid.prefix(8))) · \(account.activeSessions.count) aktif oturum")
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(.tertiary)
+                    Text(
+                        l10n.t(
+                            "Org \(String(account.orgUuid.prefix(8))) · \(account.activeSessions.count) aktif oturum",
+                            "Org \(String(account.orgUuid.prefix(8))) · \(account.activeSessions.count) active sessions"
+                        )
+                    )
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.tertiary)
                 }
 
                 Spacer()
@@ -202,13 +223,13 @@ struct LimitsDashboardView: View {
                 HStack(spacing: 12) {
                     AnimatedCircularGauge(
                         percent: usage?.fiveHourPercent,
-                        title: "5 Saat",
+                        title: l10n.t("5 Saat", "5 Hours"),
                         diameter: 54,
                         lineWidth: 5
                     )
                     AnimatedCircularGauge(
                         percent: usage?.sevenDayPercent,
-                        title: "7 Gün",
+                        title: l10n.t("7 Gün", "7 Days"),
                         diameter: 54,
                         lineWidth: 5
                     )
@@ -216,16 +237,24 @@ struct LimitsDashboardView: View {
 
                 VStack(spacing: 8) {
                     LinearUsageBar(
-                        label: "5 Saatlik",
+                        label: l10n.t("5 Saatlik", "5-Hour Window"),
                         percent: usage?.fiveHourPercent,
-                        subtitle: usage?.fiveHourPercent == nil && (usage?.sevenDayPercent ?? 0) >= 100 ? "(7g dolu)" : nil
+                        subtitle: usage?.fiveHourPercent == nil && (usage?.sevenDayPercent ?? 0) >= 100
+                            ? l10n.t("(7g dolu)", "(7d full)")
+                            : nil,
+                        isTurkish: l10n.isTurkish
                     )
                     LinearUsageBar(
-                        label: "7 Günlük",
-                        percent: usage?.sevenDayPercent
+                        label: l10n.t("7 Günlük", "7-Day Window"),
+                        percent: usage?.sevenDayPercent,
+                        isTurkish: l10n.isTurkish
                     )
                     if let xu = usage?.extraUsagePercent {
-                        LinearUsageBar(label: "Ek Kullanım", percent: xu)
+                        LinearUsageBar(
+                            label: l10n.t("Ek Kullanım", "Extra Usage"),
+                            percent: xu,
+                            isTurkish: l10n.isTurkish
+                        )
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -238,17 +267,29 @@ struct LimitsDashboardView: View {
                         .foregroundStyle(hit.isCurrentlyRejected ? Color(nsColor: .systemRed) : .secondary)
 
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("\(hit.rateLimitTypeLabel) · \(hit.isCurrentlyRejected ? "Aktif Kısıtlama" : "Son Kayıt")")
-                            .font(.system(size: 10.5, weight: .semibold))
+                        Text(
+                            "\(hit.rateLimitTypeLabel(isTurkish: l10n.isTurkish)) · \(hit.isCurrentlyRejected ? l10n.t("Aktif Kısıtlama", "Active Throttle") : l10n.t("Son Kayıt", "Last Event"))"
+                        )
+                        .font(.system(size: 10.5, weight: .semibold))
                         if let resetDate = hit.resetsAt {
-                            Text("Yenilenme: \(TurkishDateFormatter.shortClockTime(resetDate)) (\(TurkishDateFormatter.countdownString(until: resetDate)))")
-                                .font(.system(size: 10))
-                                .monospacedDigit()
-                                .foregroundStyle(.secondary)
+                            Text(
+                                l10n.t(
+                                    "Yenilenme: \(l10n.shortClock(resetDate)) (\(l10n.countdown(until: resetDate)))",
+                                    "Resets: \(l10n.shortClock(resetDate)) (\(l10n.countdown(until: resetDate)))"
+                                )
+                            )
+                            .font(.system(size: 10))
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
                         } else {
-                            Text("Kaydedildi: \(TurkishDateFormatter.relativeString(from: hit.timestamp))")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.secondary)
+                            Text(
+                                l10n.t(
+                                    "Kaydedildi: \(l10n.relativeDate(hit.timestamp))",
+                                    "Recorded: \(l10n.relativeDate(hit.timestamp))"
+                                )
+                            )
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
                         }
                     }
 
@@ -265,26 +306,35 @@ struct LimitsDashboardView: View {
             if let history = usage?.history, !history.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
-                        Text("7 GÜNLÜK KULLANIM EĞRİSİ")
+                        Text(l10n.t("7 GÜNLÜK KULLANIM EĞRİSİ", "7-DAY USAGE TREND"))
                             .font(.system(size: 9, weight: .bold))
                             .foregroundStyle(.tertiary)
                             .tracking(0.6)
                         Spacer()
                         if let ts = usage?.updatedAt {
-                            Text("Son güncelleme: \(TurkishDateFormatter.relativeString(from: ts))")
-                                .font(.system(size: 9.5))
-                                .foregroundStyle(.tertiary)
+                            Text(
+                                l10n.t(
+                                    "Son güncelleme: \(l10n.relativeDate(ts))",
+                                    "Updated \(l10n.relativeDate(ts))"
+                                )
+                            )
+                            .font(.system(size: 9.5))
+                            .foregroundStyle(.tertiary)
                         }
                     }
 
-                    UsageSparkline(points: history, metric: .sevenDay)
-                        .frame(height: 48)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 4)
-                        .background(
-                            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                .fill(Color.primary.opacity(0.04))
-                        )
+                    UsageSparkline(
+                        points: history,
+                        metric: .sevenDay,
+                        emptyLabel: l10n.t("Grafik için yeterli örnek birikmedi", "Not enough samples for chart yet")
+                    )
+                    .frame(height: 48)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .fill(Color.primary.opacity(0.04))
+                    )
                 }
             }
         }
@@ -300,9 +350,9 @@ struct LimitsDashboardView: View {
 
     private func statusBadge(isExhausted: Bool, isActive: Bool) -> some View {
         let (text, color): (String, Color) = {
-            if isExhausted { return ("Limit Dolu", Color(nsColor: .systemRed)) }
-            if isActive { return ("Aktif Hesap", Color(nsColor: .systemGreen)) }
-            return ("Yedek Hazır", Color(nsColor: .systemBlue))
+            if isExhausted { return (l10n.t("Limit Dolu", "Limit Hit"), Color(nsColor: .systemRed)) }
+            if isActive { return (l10n.t("Aktif Hesap", "Active Account"), Color(nsColor: .systemGreen)) }
+            return (l10n.t("Yedek Hazır", "Standby Ready"), Color(nsColor: .systemBlue))
         }()
 
         return Text(text)
@@ -317,7 +367,7 @@ struct LimitsDashboardView: View {
 
     private var autoSwitchHistoryCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Otomatik Geçiş Kayıtları", systemImage: "clock.arrow.2.circlepath")
+            Label(l10n.t("Otomatik Geçiş Kayıtları", "Auto-Failover History"), systemImage: "clock.arrow.2.circlepath")
                 .font(.system(size: 11.5, weight: .semibold))
 
             ForEach(viewModel.autoSwitchHistory.prefix(5)) { entry in
@@ -326,15 +376,20 @@ struct LimitsDashboardView: View {
                         .font(.system(size: 11))
                         .foregroundStyle(Color(nsColor: .systemGreen))
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("→ \(entry.targetName) (\(entry.transferredCount) oturum)")
-                            .font(.system(size: 11, weight: .medium))
+                        Text(
+                            l10n.t(
+                                "→ \(entry.targetName) (\(entry.transferredCount) oturum)",
+                                "→ \(entry.targetName) (\(entry.transferredCount) sessions)"
+                            )
+                        )
+                        .font(.system(size: 11, weight: .medium))
                         Text(entry.reason)
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
                     Spacer()
-                    Text(TurkishDateFormatter.relativeString(from: entry.timestamp))
+                    Text(l10n.relativeDate(entry.timestamp))
                         .font(.system(size: 9.5))
                         .foregroundStyle(.tertiary)
                 }
@@ -349,12 +404,17 @@ struct LimitsDashboardView: View {
             Image(systemName: "gauge.with.dots.needle.0percent")
                 .font(.system(size: 26))
                 .foregroundStyle(.tertiary)
-            Text("Henüz limit verisi okunamadı")
+            Text(l10n.t("Henüz limit verisi okunamadı", "No usage telemetry found yet"))
                 .font(.system(size: 12, weight: .semibold))
-            Text("Claude Desktop açık olduğunda plan-usage-history.json ve oturum kayıtları otomatik izlenir.")
-                .font(.system(size: 10.5))
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+            Text(
+                l10n.t(
+                    "Claude Desktop açık olduğunda plan-usage-history.json ve oturum kayıtları otomatik izlenir.",
+                    "When Claude Desktop runs, plan-usage-history.json and session logs are monitored automatically."
+                )
+            )
+            .font(.system(size: 10.5))
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
         }
         .padding(24)
         .frame(maxWidth: .infinity)

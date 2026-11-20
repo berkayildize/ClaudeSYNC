@@ -4,19 +4,20 @@ import SwiftUI
 struct ProfilesManagerView: View {
     @ObservedObject var viewModel: AppViewModel
 
-    @State private var newProfileName: String = "2. Profil"
+    @State private var newProfileName: String = ""
     @State private var newProfilePath: String = "~/Library/Application Support/Claude-Account2"
     @State private var copyMcpConfig: Bool = true
     @State private var migrateExistingSessions: Bool = true
+
+    private var l10n: L10n { viewModel.l10n }
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 14) {
                 headerExplanationCard
 
-                // Configured Profiles Grid
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("YAPILANDIRILMIŞ PROFİLLER")
+                    Text(l10n.t("YAPILANDIRILMIŞ PROFİLLER", "CONFIGURED PROFILES"))
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(.tertiary)
                         .tracking(0.7)
@@ -26,12 +27,21 @@ struct ProfilesManagerView: View {
                     }
                 }
 
-                // Create / Add Secondary Profile Card
                 createSecondaryProfileCard
             }
             .padding(16)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear {
+            if newProfileName.isEmpty {
+                newProfileName = l10n.t("2. Profil", "Profile 2")
+            }
+        }
+        .onChange(of: viewModel.settings.language) { _, _ in
+            if newProfileName == "2. Profil" || newProfileName == "Profile 2" {
+                newProfileName = l10n.t("2. Profil", "Profile 2")
+            }
+        }
     }
 
     private var headerExplanationCard: some View {
@@ -46,12 +56,17 @@ struct ProfilesManagerView: View {
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("Çıkışsız Çift Profil Mimarisi")
+                Text(l10n.t("Çıkışsız Çift Profil Mimarisi", "Zero-Logout Dual Profile Architecture"))
                     .font(.system(size: 13, weight: .semibold))
-                Text("Her profil Claude Desktop'ı kendi --user-data-dir klasörüyle izole çalıştırır. İki Ultra hesabınız da sürekli giriş yapılı kalır; limit dolunca çıkış yapmadan anında geçebilirsiniz.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                Text(
+                    l10n.t(
+                        "Her profil Claude Desktop'ı kendi --user-data-dir klasörüyle izole çalıştırır. İki Ultra hesabınız da sürekli giriş yapılı kalır; limit dolunca çıkış yapmadan anında geçebilirsiniz.",
+                        "Each profile runs Claude Desktop isolated with its own --user-data-dir folder. Stay permanently signed into both accounts and switch instantly when limits hit."
+                    )
+                )
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             }
 
             Spacer(minLength: 0)
@@ -76,11 +91,11 @@ struct ProfilesManagerView: View {
                         isPulsing: running != nil
                     )
 
-                    Text(profile.name)
+                    Text(l10n.profileDisplayName(profile.name, isDefault: profile.isDefault))
                         .font(.system(size: 13, weight: .semibold))
 
                     if profile.isDefault {
-                        Text("Varsayılan")
+                        Text(l10n.t("Varsayılan", "Default"))
                             .font(.system(size: 9.5, weight: .semibold))
                             .padding(.horizontal, 6.5)
                             .padding(.vertical, 2)
@@ -89,19 +104,23 @@ struct ProfilesManagerView: View {
                     }
 
                     if let proc = running {
-                        Text("Çalışıyor · PID \(String(proc.pid))")
+                        Text(l10n.t("Çalışıyor · PID \(String(proc.pid))", "Running · PID \(String(proc.pid))"))
                             .font(.system(size: 9.5, weight: .medium, design: .monospaced))
                             .padding(.horizontal, 6.5)
                             .padding(.vertical, 2)
                             .background(Capsule().fill(Color(nsColor: .systemGreen).opacity(0.14)))
                             .foregroundStyle(Color(nsColor: .systemGreen))
                     } else {
-                        Text(existsOnDisk ? "Kapalı" : "Henüz Oluşturulmadı")
-                            .font(.system(size: 9.5, weight: .medium))
-                            .padding(.horizontal, 6.5)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(Color.primary.opacity(0.07)))
-                            .foregroundStyle(.secondary)
+                        Text(
+                            existsOnDisk
+                                ? l10n.t("Kapalı", "Stopped")
+                                : l10n.t("Henüz Oluşturulmadı", "Not Created Yet")
+                        )
+                        .font(.system(size: 9.5, weight: .medium))
+                        .padding(.horizontal, 6.5)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color.primary.opacity(0.07)))
+                        .foregroundStyle(.secondary)
                     }
                 }
 
@@ -113,9 +132,14 @@ struct ProfilesManagerView: View {
                 if !matchingAccounts.isEmpty {
                     HStack(spacing: 8) {
                         ForEach(matchingAccounts) { acc in
-                            Text("\(acc.displayName) · \(acc.activeSessions.count) aktif oturum")
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(.tertiary)
+                            Text(
+                                l10n.t(
+                                    "\(acc.displayName) · \(acc.activeSessions.count) aktif oturum",
+                                    "\(acc.displayName) · \(acc.activeSessions.count) active sessions"
+                                )
+                            )
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.tertiary)
                         }
                     }
                 }
@@ -124,20 +148,25 @@ struct ProfilesManagerView: View {
             Spacer(minLength: 8)
 
             HStack(spacing: 6) {
-                Button(running != nil ? "Öne Al" : "Başlat") {
+                Button(running != nil ? l10n.t("Öne Al", "Focus") : l10n.t("Başlat", "Launch")) {
                     viewModel.focusOrLaunchProfile(profile)
                 }
                 .nativeGlassButton(prominent: running == nil)
                 .controlSize(.small)
                 .disabled(viewModel.isBusy)
 
-                Button("Yenile") {
+                Button(l10n.t("Yenile", "Reload")) {
                     viewModel.reloadProfile(profile)
                 }
                 .nativeGlassButton()
                 .controlSize(.small)
                 .disabled(viewModel.isBusy)
-                .help("Profili güvenle kapatıp yeniden açar (kenar çubuğunu yeniler)")
+                .help(
+                    l10n.t(
+                        "Profili güvenle kapatıp yeniden açar (kenar çubuğunu yeniler)",
+                        "Gracefully restarts this profile to refresh the sidebar"
+                    )
+                )
 
                 if !profile.isDefault {
                     Button {
@@ -149,7 +178,12 @@ struct ProfilesManagerView: View {
                     }
                     .buttonStyle(.plain)
                     .padding(.leading, 4)
-                    .help("Listeden kaldır (diskteki profil klasörünüz silinmez)")
+                    .help(
+                        l10n.t(
+                            "Listeden kaldır (diskteki profil klasörünüz silinmez)",
+                            "Remove from list (your folder on disk is kept intact)"
+                        )
+                    )
                 }
             }
         }
@@ -162,32 +196,44 @@ struct ProfilesManagerView: View {
 
     private var createSecondaryProfileCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("Yeni İzole Profil Oluştur", systemImage: "plus.rectangle.on.rectangle")
+            Label(l10n.t("Yeni İzole Profil Oluştur", "Create New Isolated Profile"), systemImage: "plus.rectangle.on.rectangle")
                 .font(.system(size: 12.5, weight: .semibold))
 
             HStack(spacing: 8) {
-                TextField("Profil adı", text: $newProfileName)
+                TextField(l10n.t("Profil adı", "Profile name"), text: $newProfileName)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 11.5))
                     .frame(width: 150)
 
-                TextField("Veri klasörü", text: $newProfilePath)
+                TextField(l10n.t("Veri klasörü", "Data directory"), text: $newProfilePath)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 11, design: .monospaced))
             }
 
             HStack(spacing: 16) {
-                Toggle("Yerel MCP ayarlarını (claude_desktop_config.json) kopyala", isOn: $copyMcpConfig)
-                    .font(.system(size: 11))
-                    .toggleStyle(.checkbox)
+                Toggle(
+                    l10n.t(
+                        "Yerel MCP ayarlarını (claude_desktop_config.json) kopyala",
+                        "Copy local MCP config (claude_desktop_config.json)"
+                    ),
+                    isOn: $copyMcpConfig
+                )
+                .font(.system(size: 11))
+                .toggleStyle(.checkbox)
 
                 Spacer()
             }
 
             HStack(spacing: 16) {
-                Toggle("2. hesabın mevcut oturum kartlarını yeni profile taşı", isOn: $migrateExistingSessions)
-                    .font(.system(size: 11))
-                    .toggleStyle(.checkbox)
+                Toggle(
+                    l10n.t(
+                        "2. hesabın mevcut oturum kartlarını yeni profile taşı",
+                        "Migrate existing 2nd account session cards to the new profile"
+                    ),
+                    isOn: $migrateExistingSessions
+                )
+                .font(.system(size: 11))
+                .toggleStyle(.checkbox)
 
                 Spacer()
 
@@ -203,7 +249,7 @@ struct ProfilesManagerView: View {
                     HStack(spacing: 5) {
                         Image(systemName: "plus.app.fill")
                             .font(.system(size: 11))
-                        Text("Profili Oluştur ve Başlat")
+                        Text(l10n.t("Profili Oluştur ve Başlat", "Create & Launch Profile"))
                             .font(.system(size: 11.5, weight: .semibold))
                     }
                     .padding(.horizontal, 13)

@@ -224,6 +224,7 @@ struct LinearUsageBar: View {
     let label: String
     let percent: Int?
     var subtitle: String? = nil
+    var isTurkish: Bool = true
 
     private var fraction: Double {
         guard let p = percent else { return 0 }
@@ -243,7 +244,7 @@ struct LinearUsageBar: View {
                         .foregroundStyle(.tertiary)
                 }
                 Spacer()
-                Text(percent.map { "%\($0)" } ?? "—")
+                Text(percent.map { isTurkish ? "%\($0)" : "\($0)%" } ?? "—")
                     .font(.system(size: 11.5, weight: .semibold, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(percent.map { BridgeTheme.usageColor(percent: $0) } ?? .secondary)
@@ -272,6 +273,7 @@ struct LinearUsageBar: View {
 struct UsageSparkline: View {
     let points: [UsageSamplePoint]
     let metric: Metric
+    var emptyLabel: String = "Grafik için yeterli örnek birikmedi"
 
     enum Metric {
         case sevenDay
@@ -342,7 +344,7 @@ struct UsageSparkline: View {
             } else {
                 HStack {
                     Spacer()
-                    Text("Grafik için yeterli örnek birikmedi")
+                    Text(emptyLabel)
                         .font(.system(size: 10))
                         .foregroundStyle(.tertiary)
                     Spacer()
