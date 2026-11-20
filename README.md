@@ -33,8 +33,8 @@ A native, 100% local, open-source macOS desktop app (with a toggleable Retina Me
   - Walks new users through language selection (System Auto, English, Turkish), local Claude Desktop folder & notification permission verification, optional 2nd profile setup, and menu bar preferences in under 60 seconds.
 - **Live Retina Menu Bar Limit Bars**
   - Custom flat-vector ClaudeSYNC icon + crisp `@2x` stacked progress bars directly in the macOS Menu Bar displaying both accounts' usage (or active account's `5h / 7d` windows), tuned for both Dark and Light menu bars.
-- **Zero-Logout Dual-Profile Mode (`--user-data-dir`)**
-  - Launch an isolated secondary Claude Desktop profile in one click (optionally copying your local `claude_desktop_config.json` MCP servers and existing session cards — never cookies or tokens). Stay signed into both accounts permanently.
+- **Single-Window Autonomous Switching (`--user-data-dir`)**
+  - Keeps **only 1 Claude Desktop window running** by default: when switching accounts, ClaudeSYNC syncs your active session cards, closes the current Claude window cleanly, and reopens directly in the other account — no duplicate Dock icons, zero logout loops, and **native Google/Gmail OAuth support** on setup. (Optional Parallel Dual-Window Mode is also available in Settings/Profiles.)
 - **Real-Time Limits & Automatic Failover**
   - Monitors local `plan-usage-history.json` and active `.jsonl` tails for `429 usage_limit_reached` events and exact `resetsAt` countdowns. Automatically transfers active sessions to your healthy account and brings its profile forward when a limit hits.
 - **Background Auto Shared-Card Sync**
@@ -98,7 +98,7 @@ ClaudeSYNC bridges those local session cards safely so switching profiles preser
 
 ### Option 1: Download Prebuilt DMG (Recommended)
 
-1. Download **`ClaudeSYNC-v1.0.0-macOS.dmg`** from [**GitHub Releases**](https://github.com/berkayildize/ClaudeSYNC/releases/latest).
+1. Download **`ClaudeSYNC-v0.0.3-macOS.dmg`** from [**GitHub Releases**](https://github.com/berkayildize/ClaudeSYNC/releases/latest) (see [CHANGELOG.md](CHANGELOG.md) for version history).
 2. Drag **`ClaudeSYNC.app`** into your **`Applications`** folder.
 3. Because this is an unsigned open-source release, right-click `ClaudeSYNC.app` → **Open** on first launch, or clear quarantine:
    ```bash
@@ -116,8 +116,8 @@ cd ClaudeSYNC
 # Run the unit test suite
 swift test
 
-# Build Release .app bundle and install into /Applications
-bash scripts/build-app.sh --install
+# Build Release .app bundle, install into /Applications, and relaunch
+bash scripts/build-app.sh --install --relaunch
 
 # Optional: also package a distributable DMG in dist/
 bash scripts/build-app.sh --dmg

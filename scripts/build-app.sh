@@ -4,7 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="ClaudeSYNC"
 BUNDLE_ID="com.claudesync.app"
-VERSION="1.0.0"
+VERSION="$(tr -d '[:space:]' < "$ROOT_DIR/VERSION")"
+BUILD_NUM="$(git -C "$ROOT_DIR" rev-list --count HEAD 2>/dev/null || echo 1)"
 
 DIST_DIR="$ROOT_DIR/dist"
 APP_DIR="$DIST_DIR/$APP_NAME.app"
@@ -58,7 +59,7 @@ cat > "$CONTENTS_DIR/Info.plist" <<EOF
     <key>CFBundleShortVersionString</key>
     <string>${VERSION}</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>${BUILD_NUM}</string>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.developer-tools</string>
     <key>LSMinimumSystemVersion</key>
@@ -92,6 +93,12 @@ for arg in "$@"; do
       hdiutil create -volname "$APP_NAME" -srcfolder "$STAGE_DIR" -ov -format UDZO "$DMG_PATH" >/dev/null
       rm -rf "$STAGE_DIR"
       echo "==> Created DMG: $DMG_PATH"
+      ;;
+    --relaunch)
+      echo "==> Relaunching /Applications/$APP_NAME.app (v$VERSION)..."
+      pkill -x "$APP_NAME" 2>/dev/null || true
+      sleep 0.5
+      open -a "/Applications/$APP_NAME.app"
       ;;
   esac
 done

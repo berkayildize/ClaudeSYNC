@@ -460,6 +460,10 @@ struct SettingsView: View {
 
     // MARK: - 6. About & Open Source Privacy
 
+    private var appVersionString: String {
+        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0.0.3"
+    }
+
     private var aboutSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
@@ -477,9 +481,19 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Text("v1.0.0")
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.tertiary)
+                Button {
+                    if let url = URL(string: "https://github.com/berkayildize/ClaudeSYNC/releases") {
+                        NSWorkspace.shared.open(url)
+                    }
+                } label: {
+                    Text("v\(appVersionString) · \(l10n.t("Sürüm Notları", "Release Notes"))")
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(Color.primary.opacity(0.07)))
+                }
+                .buttonStyle(.plain)
             }
 
             Text(
