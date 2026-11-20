@@ -185,3 +185,68 @@ struct ClaudeSyncHeaderIcon: View {
         .frame(width: size, height: size)
     }
 }
+
+// MARK: - Creator Identity & Crisp Vector Social Marks
+
+enum CreatorLinks {
+    static let handle = "@berkayildize"
+    static let githubURL = URL(string: "https://github.com/berkayildize/")!
+    static let xURL = URL(string: "https://x.com/berkayildize/")!
+    static let repoURL = URL(string: "https://github.com/berkayildize/ClaudeSYNC")!
+    static let releasesURL = URL(string: "https://github.com/berkayildize/ClaudeSYNC/releases")!
+}
+
+/// Crisp vector X (Twitter) logo mark scaled cleanly at any point size.
+struct XBrandMark: View {
+    var size: CGFloat = 11
+
+    var body: some View {
+        Canvas { ctx, sz in
+            let w = sz.width
+            let h = sz.height
+            var path = Path()
+            // Classic geometric X emblem (left diagonal ribbon + right thin crossing stroke)
+            path.move(to: CGPoint(x: w * 0.08, y: h * 0.08))
+            path.addLine(to: CGPoint(x: w * 0.34, y: h * 0.08))
+            path.addLine(to: CGPoint(x: w * 0.92, y: h * 0.92))
+            path.addLine(to: CGPoint(x: w * 0.66, y: h * 0.92))
+            path.closeSubpath()
+            ctx.fill(path, with: .foreground)
+
+            var slash = Path()
+            slash.move(to: CGPoint(x: w * 0.84, y: h * 0.08))
+            slash.addLine(to: CGPoint(x: w * 0.14, y: h * 0.92))
+            ctx.stroke(slash, with: .foreground, style: StrokeStyle(lineWidth: max(1.1, w * 0.13), lineCap: .square))
+        }
+        .frame(width: size, height: size)
+    }
+}
+
+/// Crisp vector GitHub mark (clean circular badge with minimalist silhouette).
+struct GitHubBrandMark: View {
+    var size: CGFloat = 12
+
+    var body: some View {
+        Canvas { ctx, sz in
+            let w = sz.width
+            let h = sz.height
+            // Clean scalable geometric GitHub octocat head/ears mark
+            var head = Path()
+            head.addEllipse(in: CGRect(x: w * 0.12, y: h * 0.18, width: w * 0.76, height: h * 0.66))
+            // Left ear
+            head.move(to: CGPoint(x: w * 0.22, y: h * 0.34))
+            head.addLine(to: CGPoint(x: w * 0.18, y: h * 0.10))
+            head.addLine(to: CGPoint(x: w * 0.39, y: h * 0.22))
+            head.closeSubpath()
+            // Right ear
+            head.move(to: CGPoint(x: w * 0.78, y: h * 0.34))
+            head.addLine(to: CGPoint(x: w * 0.82, y: h * 0.10))
+            head.addLine(to: CGPoint(x: w * 0.61, y: h * 0.22))
+            head.closeSubpath()
+            // Neck base
+            head.addRoundedRect(in: CGRect(x: w * 0.34, y: h * 0.72, width: w * 0.32, height: h * 0.22), cornerSize: CGSize(width: w * 0.08, height: h * 0.08))
+            ctx.fill(head, with: .foreground)
+        }
+        .frame(width: size, height: size)
+    }
+}

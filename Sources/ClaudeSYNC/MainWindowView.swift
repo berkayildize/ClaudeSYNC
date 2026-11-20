@@ -96,26 +96,66 @@ struct MainWindowView: View {
             }
 
             // Quick Menu Bar Toggle right in Sidebar Footer
-            HStack(spacing: 8) {
-                Image(systemName: "menubar.rectangle")
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(.secondary)
-                Text(l10n.t("Üst Bar Simgesi", "Menu Bar Icon"))
-                    .font(.system(size: 11, weight: .medium))
-                Spacer()
-                Toggle(
-                    "",
-                    isOn: Binding(
-                        get: { viewModel.showMenuBarExtra },
-                        set: { viewModel.setShowMenuBarExtra($0) }
+            VStack(spacing: 0) {
+                HStack(spacing: 8) {
+                    Image(systemName: "menubar.rectangle")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    Text(l10n.t("Üst Bar Simgesi", "Menu Bar Icon"))
+                        .font(.system(size: 11, weight: .medium))
+                    Spacer()
+                    Toggle(
+                        "",
+                        isOn: Binding(
+                            get: { viewModel.showMenuBarExtra },
+                            set: { viewModel.setShowMenuBarExtra($0) }
+                        )
                     )
-                )
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.mini)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8.5)
+
+                Rectangle()
+                    .fill(isDark ? Color.white.opacity(0.06) : Color.black.opacity(0.06))
+                    .frame(height: 0.5)
+
+                // Subtle Creator Attribution & Social Links
+                HStack(spacing: 6) {
+                    Text(l10n.t("by \(CreatorLinks.handle)", "by \(CreatorLinks.handle)"))
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+
+                    Spacer()
+
+                    Button {
+                        NSWorkspace.shared.open(CreatorLinks.githubURL)
+                    } label: {
+                        GitHubBrandMark(size: 11.5)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 22, height: 20)
+                            .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Color.primary.opacity(0.06)))
+                    }
+                    .buttonStyle(TactileScaleButtonStyle())
+                    .help("GitHub — https://github.com/berkayildize/")
+
+                    Button {
+                        NSWorkspace.shared.open(CreatorLinks.xURL)
+                    } label: {
+                        XBrandMark(size: 9.5)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 22, height: 20)
+                            .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Color.primary.opacity(0.06)))
+                    }
+                    .buttonStyle(TactileScaleButtonStyle())
+                    .help("X (Twitter) — https://x.com/berkayildize/")
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6.5)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
             .background(isDark ? Color.white.opacity(0.035) : Color.black.opacity(0.03))
             .overlay(alignment: .top) {
                 Rectangle()

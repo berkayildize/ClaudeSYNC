@@ -248,6 +248,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         wizardItem.target = self
         appMenu.addItem(wizardItem)
         appMenu.addItem(.separator())
+        let ghItem = NSMenuItem(title: "GitHub (\(CreatorLinks.handle))", action: #selector(handleOpenGitHub), keyEquivalent: "")
+        ghItem.target = self
+        appMenu.addItem(ghItem)
+        let xItem = NSMenuItem(title: "X / Twitter (\(CreatorLinks.handle))", action: #selector(handleOpenX), keyEquivalent: "")
+        xItem.target = self
+        appMenu.addItem(xItem)
+        let relItem = NSMenuItem(title: t.t("Sürüm Notları...", "Release Notes..."), action: #selector(handleOpenReleases), keyEquivalent: "")
+        relItem.target = self
+        appMenu.addItem(relItem)
+        appMenu.addItem(.separator())
         let hideItem = NSMenuItem(title: t.t("ClaudeSYNC'i Gizle", "Hide ClaudeSYNC"), action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem(hideItem)
         appMenu.addItem(.separator())
@@ -303,6 +313,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc private func handleOpenOnboarding() {
         viewModel.reopenOnboarding()
         showMainWindow()
+    }
+
+    @objc private func handleOpenGitHub() {
+        NSWorkspace.shared.open(CreatorLinks.githubURL)
+    }
+
+    @objc private func handleOpenX() {
+        NSWorkspace.shared.open(CreatorLinks.xURL)
+    }
+
+    @objc private func handleOpenReleases() {
+        NSWorkspace.shared.open(CreatorLinks.releasesURL)
     }
 
     @objc private func handleOpenMainWindow() {

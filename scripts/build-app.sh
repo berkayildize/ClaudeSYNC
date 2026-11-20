@@ -66,6 +66,8 @@ cat > "$CONTENTS_DIR/Info.plist" <<EOF
     <string>14.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSHumanReadableCopyright</key>
+    <string>© 2026 @berkayildize · MIT Open Source</string>
 </dict>
 </plist>
 EOF

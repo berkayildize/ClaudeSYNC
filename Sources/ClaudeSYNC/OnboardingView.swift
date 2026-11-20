@@ -251,6 +251,44 @@ struct OnboardingView: View {
                     )
                 )
             }
+
+            // Subtle Creator Credit Strip
+            HStack(spacing: 10) {
+                Text(l10n.t("Geliştirici: \(CreatorLinks.handle)", "Built by \(CreatorLinks.handle)"))
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(.tertiary)
+
+                Button {
+                    NSWorkspace.shared.open(CreatorLinks.githubURL)
+                } label: {
+                    HStack(spacing: 4) {
+                        GitHubBrandMark(size: 10.5)
+                        Text("GitHub")
+                            .font(.system(size: 10, weight: .medium))
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3.5)
+                    .liquidGlassCapsule(tint: nil, interactive: false)
+                }
+                .buttonStyle(TactileScaleButtonStyle())
+
+                Button {
+                    NSWorkspace.shared.open(CreatorLinks.xURL)
+                } label: {
+                    HStack(spacing: 4) {
+                        XBrandMark(size: 9)
+                        Text("Twitter")
+                            .font(.system(size: 10, weight: .medium))
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3.5)
+                    .liquidGlassCapsule(tint: nil, interactive: false)
+                }
+                .buttonStyle(TactileScaleButtonStyle())
+            }
+            .padding(.top, 2)
         }
     }
 

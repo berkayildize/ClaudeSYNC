@@ -461,40 +461,88 @@ struct SettingsView: View {
     // MARK: - 6. About & Open Source Privacy
 
     private var appVersionString: String {
-        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0.0.3"
+        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0.0.6"
     }
 
     private var aboutSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                ClaudeSyncHeaderIcon(size: 24)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(l10n.t("ClaudeSYNC · Açık Kaynak (MIT)", "ClaudeSYNC · Open Source (MIT)"))
-                        .font(.system(size: 11.5, weight: .semibold))
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 9) {
+                ClaudeSyncHeaderIcon(size: 28)
+                VStack(alignment: .leading, spacing: 1.5) {
+                    HStack(spacing: 6) {
+                        Text(l10n.t("ClaudeSYNC · Açık Kaynak (MIT)", "ClaudeSYNC · Open Source (MIT)"))
+                            .font(.system(size: 12, weight: .semibold))
+                        Text("v\(appVersionString)")
+                            .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(Color(red: 0.85, green: 0.47, blue: 0.34))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1.5)
+                            .background(Capsule().fill(Color(red: 0.85, green: 0.47, blue: 0.34).opacity(0.14)))
+                    }
                     Text(
                         l10n.t(
-                            "%100 Yerel · Sıfır Telemetri · Çerez/Token Okumaz",
-                            "100% Local · Zero Telemetry · Never Reads Cookies or Tokens"
+                            "Geliştirici: \(CreatorLinks.handle) · %100 Yerel · Sıfır Telemetri",
+                            "Created by \(CreatorLinks.handle) · 100% Local · Zero Telemetry"
                         )
                     )
-                    .font(.system(size: 10))
+                    .font(.system(size: 10.5))
                     .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button {
-                    if let url = URL(string: "https://github.com/berkayildize/ClaudeSYNC/releases") {
-                        NSWorkspace.shared.open(url)
-                    }
-                } label: {
-                    Text("v\(appVersionString) · \(l10n.t("Sürüm Notları", "Release Notes"))")
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(Capsule().fill(Color.primary.opacity(0.07)))
-                }
-                .buttonStyle(.plain)
             }
+
+            // Creator & Open-Source Links Row
+            HStack(spacing: 7) {
+                Button {
+                    NSWorkspace.shared.open(CreatorLinks.githubURL)
+                } label: {
+                    HStack(spacing: 5) {
+                        GitHubBrandMark(size: 11.5)
+                        Text("GitHub · \(CreatorLinks.handle)")
+                            .font(.system(size: 10.5, weight: .medium))
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .liquidGlassCapsule(tint: nil, interactive: false)
+                }
+                .buttonStyle(TactileScaleButtonStyle())
+                .help("https://github.com/berkayildize/")
+
+                Button {
+                    NSWorkspace.shared.open(CreatorLinks.xURL)
+                } label: {
+                    HStack(spacing: 5) {
+                        XBrandMark(size: 10)
+                        Text("X · \(CreatorLinks.handle)")
+                            .font(.system(size: 10.5, weight: .medium))
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .liquidGlassCapsule(tint: nil, interactive: false)
+                }
+                .buttonStyle(TactileScaleButtonStyle())
+                .help("https://x.com/berkayildize/")
+
+                Spacer()
+
+                Button {
+                    NSWorkspace.shared.open(CreatorLinks.releasesURL)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "tag")
+                            .font(.system(size: 9.5, weight: .semibold))
+                        Text(l10n.t("Sürüm Notları", "Release Notes"))
+                            .font(.system(size: 10.5, weight: .medium))
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .liquidGlassCapsule(tint: nil, interactive: false)
+                }
+                .buttonStyle(TactileScaleButtonStyle())
+            }
+
+            Divider().opacity(0.35)
 
             Text(
                 l10n.t(
@@ -506,7 +554,7 @@ struct SettingsView: View {
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(12)
+        .padding(13)
         .frame(maxWidth: .infinity, alignment: .leading)
         .liquidGlassCard(cornerRadius: 12)
     }

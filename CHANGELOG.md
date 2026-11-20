@@ -5,6 +5,15 @@ Each release is packaged as a standalone macOS `.dmg` under [GitHub Releases](ht
 
 ---
 
+## [v0.0.6] — 2026-11-20
+
+### Creator Attribution & Direct Social Links
+
+#### Added
+- **Creator Credit & Direct Links (`@berkayildize`):** Added crisp vector GitHub (`https://github.com/berkayildize/`) and X / Twitter (`https://x.com/berkayildize/`) links in the Main Window sidebar footer, Settings → About card, First-Launch Setup Wizard welcome screen, native macOS `ClaudeSYNC` app menu, and `Info.plist` About panel metadata.
+
+---
+
 ## [v0.0.5] — 2026-11-20
 
 ### Custom Retina macOS DMG Installer UI
